@@ -144,6 +144,28 @@ class Bill {
     return null;
   }
 
+  /// Payment-only copy. GST totals and line items stay unchanged.
+  Bill withPayment(PaymentBreakdown payment) {
+    return Bill(
+      billId: billId,
+      invoiceNo: invoiceNo,
+      invoiceDate: invoiceDate,
+      partyId: partyId,
+      partyName: partyName,
+      partyAddress: partyAddress,
+      partyState: partyState,
+      partyGSTIN: partyGSTIN,
+      items: items,
+      subtotal: subtotal,
+      totalTax: totalTax,
+      grandTotal: grandTotal,
+      status: status,
+      paymentStatus: payment.paymentStatus,
+      paidAmount: payment.paidAmount,
+      remainingAmount: payment.remainingAmount,
+    );
+  }
+
   factory Bill.fromMap(String billId, Map<String, dynamic> map) {
     final rawItems = map['items'];
     final items = rawItems is List

@@ -139,5 +139,39 @@ void main() {
       expect(restored.paidAmount, 0);
       expect(restored.remainingAmount, 118);
     });
+
+    test('withPayment updates status amounts without changing GST totals', () {
+      final bill = Bill(
+        billId: 'b1',
+        invoiceNo: 'INV-0009',
+        invoiceDate: DateTime(2026, 9, 19),
+        partyId: 'p1',
+        partyName: 'Acme',
+        partyState: 'Maharashtra',
+        items: const [],
+        subtotal: 100,
+        totalTax: 18,
+        grandTotal: 118,
+        paymentStatus: PaymentStatus.unpaid,
+        paidAmount: 0,
+        remainingAmount: 118,
+      );
+
+      final updated = bill.withPayment(
+        Bill.resolvePayment(
+          paymentStatus: PaymentStatus.partial,
+          grandTotal: bill.grandTotal,
+          paidAmount: 40,
+        ),
+      );
+
+      expect(updated.paymentStatus, PaymentStatus.partial);
+      expect(updated.paidAmount, 40);
+      expect(updated.remainingAmount, 78);
+      expect(updated.subtotal, 100);
+      expect(updated.totalTax, 18);
+      expect(updated.grandTotal, 118);
+      expect(updated.invoiceNo, 'INV-0009');
+    });
   });
 }

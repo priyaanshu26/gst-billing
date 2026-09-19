@@ -232,4 +232,42 @@ class BillService {
       return bill;
     });
   }
+
+  /// Owner-only. Updates payment status / paid amount. Does not change GST,
+  /// items, party snapshot, or invoice number.
+  Future<Bill> updatePayment({
+    required Bill bill,
+    required String paymentStatus,
+    double? paidAmount,
+  }) async {
+    if (!SessionService.instance.canManageShop) {
+      throw StateError('Only the shop owner can update invoice payment.');
+    }
+    if (bill.billId.trim().isEmpty) {
+      throw ArgumentError('Invoice is missing');
+    }
+
+    final paymentError = Bill.validatePayment(
+      paymentStatus: paymentStatus,
+      grandTotal: bill.grandTotal,
+      paidAmount: paidAmount,
+    );
+    if (paymentError != null) {
+      throw ArgumentError(paymentError);
+    }
+
+    final payment = Bill.resolvePayment(
+      paymentStatus: paymentStatus,
+      grandTotal: bill.grandTotal,
+      paidAmount: paidAmount,
+    );
+
+    await _bills.doc(bill.billId).update({
+      'paymentStatus': payment.paymentStatus,
+      'paidAmount': payment.paidAmount,
+      'remainingAmount': payment.remainingAmount,
+    });
+
+    return bill.withPayment(payment);
+  }
 }
