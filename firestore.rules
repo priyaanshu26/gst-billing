@@ -37,6 +37,17 @@ service cloud.firestore {
       return canAccessShop(shopId) && isOwner();
     }
 
+    function userIdentityUnchanged() {
+      return request.resource.data.uid == resource.data.uid &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.shopId == resource.data.shopId;
+    }
+
+    function userProfileKeysOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['name', 'email']);
+    }
+
     match /users/{uid} {
       allow read: if signedIn() && (
         request.auth.uid == uid ||
@@ -58,10 +69,15 @@ service cloud.firestore {
         )
       );
 
-      allow update: if signedIn() && (
-        request.auth.uid == uid ||
-        (isOwner() && resource.data.shopId == userShopId())
-      );
+      // Self or same-shop owner may update name/email only.
+      // uid, role, and shopId are immutable after create.
+      allow update: if signedIn() &&
+        userIdentityUnchanged() &&
+        userProfileKeysOnly() &&
+        (
+          request.auth.uid == uid ||
+          (isOwner() && resource.data.shopId == userShopId())
+        );
 
       allow delete: if signedIn() &&
         isOwner() &&

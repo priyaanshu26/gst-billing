@@ -6,11 +6,33 @@ import '../services/session_service.dart';
 import '../theme/app_theme.dart';
 import 'staff_list_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _signingOut = false;
+
   Future<void> _logout() async {
-    await AuthService().signOut();
+    if (_signingOut) return;
+    setState(() => _signingOut = true);
+    try {
+      await AuthService().signOut();
+      if (!mounted) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _signingOut = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not sign out: $error'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+    }
   }
 
   @override
@@ -80,21 +102,31 @@ class ProfileScreen extends StatelessWidget {
                 leading: const Icon(Icons.badge_outlined),
                 title: const Text('Manage staff'),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () {
-                  Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => const StaffListScreen()),
-                  );
-                },
+                onTap: _signingOut
+                    ? null
+                    : () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const StaffListScreen(),
+                          ),
+                        );
+                      },
               ),
             ),
           Card(
             child: ListTile(
-              leading: const Icon(Icons.logout, color: AppTheme.danger),
-              title: const Text(
-                'Sign out',
-                style: TextStyle(color: AppTheme.danger),
+              leading: _signingOut
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.logout, color: AppTheme.danger),
+              title: Text(
+                _signingOut ? 'Signing out…' : 'Sign out',
+                style: const TextStyle(color: AppTheme.danger),
               ),
-              onTap: _logout,
+              onTap: _signingOut ? null : _logout,
             ),
           ),
         ],

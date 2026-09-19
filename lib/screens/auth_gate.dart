@@ -16,18 +16,20 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<AppUser?>(
       stream: authService.watchSession(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
+        final user = snapshot.data;
+        if (user != null) {
+          return const HomeShell();
+        }
+
+        // Initial auth check only. After sign-out the stream emits null and
+        // must show LoginScreen even if a previous user was present.
+        if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
 
-        final user = snapshot.data;
-        if (user == null) {
-          return const LoginScreen();
-        }
-        return const HomeShell();
+        return const LoginScreen();
       },
     );
   }
