@@ -1,1 +1,27 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"gst-billing-a8c12","appId":"1:220168322379:android:3d915fc4e9d2feda4cfcce","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"gst-billing-a8c12","configurations":{"android":"1:220168322379:android:3d915fc4e9d2feda4cfcce","ios":"1:220168322379:ios:1a5ddcd9f3fb930a4cfcce","web":"1:220168322379:web:f3a29229e49076a24cfcce","windows":"1:220168322379:web:b1a34fae2e1779724cfcce"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "gst-billing-a8c12",
+          "appId": "1:220168322379:android:3d915fc4e9d2feda4cfcce",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "gst-billing-a8c12",
+          "configurations": {
+            "android": "1:220168322379:android:3d915fc4e9d2feda4cfcce",
+            "ios": "1:220168322379:ios:1a5ddcd9f3fb930a4cfcce",
+            "web": "1:220168322379:web:f3a29229e49076a24cfcce",
+            "windows": "1:220168322379:web:b1a34fae2e1779724cfcce"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}
