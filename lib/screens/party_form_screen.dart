@@ -179,6 +179,7 @@ class _PartyFormScreenState extends State<PartyFormScreen> {
               DropdownButtonFormField<String>(
                 // ignore: deprecated_member_use
                 value: _selectedState,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'State *',
                   prefixIcon: Icon(Icons.map_outlined),
@@ -187,7 +188,11 @@ class _PartyFormScreenState extends State<PartyFormScreen> {
                     .map(
                       (state) => DropdownMenuItem(
                         value: state,
-                        child: Text(state),
+                        child: Text(
+                          state,
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
                       ),
                     )
                     .toList(),

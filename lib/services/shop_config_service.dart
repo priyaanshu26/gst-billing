@@ -3,12 +3,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/collections.dart';
 import '../models/shop_config.dart';
 import 'firebase_service.dart';
+import 'session_service.dart';
 
 class ShopConfigService {
   DocumentReference<Map<String, dynamic>> get _doc {
-    return FirebaseService.firestore
-        .collection(Collections.shopConfig)
-        .doc(Collections.shopConfigDocId);
+    final shopId = SessionService.instance.requireShopId();
+    return FirebaseService.shopCollection(shopId, Collections.settings)
+        .doc(Collections.settingsDocId);
   }
 
   Future<ShopConfig?> getShopConfig() async {
@@ -18,6 +19,7 @@ class ShopConfigService {
   }
 
   /// Returns existing config, or seeds a default for MVP if missing.
+  /// Staff can read the default without writing — only the owner may seed.
   Future<ShopConfig> getOrCreateDefault() async {
     final existing = await getShopConfig();
     if (existing != null && existing.state.trim().isNotEmpty) {
@@ -30,11 +32,14 @@ class ShopConfigService {
       state: 'Maharashtra',
       gstin: '',
     );
-    await _doc.set(seeded.toMap(), SetOptions(merge: true));
-    return seeded;
+    if (SessionService.instance.canManageShop) {
+      await _doc.set(seeded.toMap(), SetOptions(merge: true));
+    }
+    return existing ?? seeded;
   }
 
   Future<void> saveShopConfig(ShopConfig config) async {
+    SessionService.instance.requireShopManager();
     await _doc.set(config.toMap(), SetOptions(merge: true));
   }
 }

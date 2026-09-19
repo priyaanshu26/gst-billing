@@ -3,10 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/collections.dart';
 import '../models/party.dart';
 import 'firebase_service.dart';
+import 'session_service.dart';
 
 class PartyService {
   CollectionReference<Map<String, dynamic>> get _collection {
-    return FirebaseService.firestore.collection(Collections.parties);
+    final shopId = SessionService.instance.requireShopId();
+    return FirebaseService.shopCollection(shopId, Collections.parties);
   }
 
   Stream<List<Party>> watchParties() {
@@ -38,6 +40,7 @@ class PartyService {
     String gstin = '',
     String email = '',
   }) async {
+    SessionService.instance.requireShopManager();
     final docRef = _collection.doc();
     final party = Party(
       partyId: docRef.id,
@@ -53,6 +56,7 @@ class PartyService {
   }
 
   Future<void> updateParty(Party party) async {
+    SessionService.instance.requireShopManager();
     await _collection.doc(party.partyId).update(
           party
               .copyWith(
@@ -68,6 +72,7 @@ class PartyService {
   }
 
   Future<void> deleteParty(String partyId) async {
+    SessionService.instance.requireShopManager();
     await _collection.doc(partyId).delete();
   }
 

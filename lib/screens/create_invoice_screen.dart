@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../models/bill.dart';
 import '../models/bill_item.dart';
 import '../models/party.dart';
 import '../models/product.dart';
@@ -9,17 +10,27 @@ import '../services/bill_service.dart';
 import '../services/gst_service.dart';
 import '../services/party_service.dart';
 import '../services/product_service.dart';
+import '../services/session_service.dart';
 import '../services/shop_config_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency_utils.dart';
 import '../widgets/invoice_summary_widgets.dart';
+import 'barcode_scanner_screen.dart';
 import 'invoice_details_screen.dart';
+import 'shop_settings_screen.dart';
 
 class _CartLine {
-  _CartLine({required this.product, required this.quantity});
+  _CartLine({
+    required this.product,
+    required this.quantity,
+  });
 
   final Product product;
   double quantity;
+  double discount = 0;
+
+  double get grossAmount =>
+      CurrencyUtils.roundMoney(product.price * quantity);
 }
 
 class CreateInvoiceScreen extends StatefulWidget {
@@ -42,10 +53,19 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   bool _saving = false;
   String? _configError;
 
+  String _paymentStatus = PaymentStatus.unpaid;
+  final _paidAmountController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
     _loadShopConfig();
+  }
+
+  @override
+  void dispose() {
+    _paidAmountController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadShopConfig() async {
@@ -65,6 +85,14 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
     }
   }
 
+  Future<void> _editShopConfig() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ShopSettingsScreen()),
+    );
+    if (!mounted) return;
+    await _loadShopConfig();
+  }
+
   bool get _isIntraState {
     if (_shopConfig == null || _selectedParty == null) return true;
     return GstService.isSameState(_shopConfig!.state, _selectedParty!.state);
@@ -82,10 +110,24 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
             (line) => BillItemDraft.fromProduct(
               line.product,
               quantity: line.quantity,
+              discount: line.discount,
             ),
           )
           .toList(),
     );
+  }
+
+  String _paymentPreviewText(double grandTotal) {
+    final paidText = _paidAmountController.text.trim();
+    final paidParsed =
+        paidText.isEmpty ? null : double.tryParse(paidText);
+    final breakdown = Bill.resolvePayment(
+      paymentStatus: _paymentStatus,
+      grandTotal: grandTotal,
+      paidAmount: _paymentStatus == PaymentStatus.partial ? paidParsed : null,
+    );
+    return 'Paid ${CurrencyUtils.format(breakdown.paidAmount)}'
+        ' · Remaining ${CurrencyUtils.format(breakdown.remainingAmount)}';
   }
 
   Future<void> _pickParty() async {
@@ -93,8 +135,11 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
     if (!mounted) return;
 
     if (parties.isEmpty) {
+      final message = SessionService.instance.canManageShop
+          ? 'Add a party first'
+          : 'Ask the shop owner to add a party first';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add a party first')),
+        SnackBar(content: Text(message)),
       );
       return;
     }
@@ -128,8 +173,11 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
     if (!mounted) return;
 
     if (products.isEmpty) {
+      final message = SessionService.instance.canManageShop
+          ? 'Add a product first'
+          : 'Ask the shop owner to add a product first';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add a product first')),
+        SnackBar(content: Text(message)),
       );
       return;
     }
@@ -143,29 +191,92 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
           items: products,
           labelBuilder: (product) => product.name,
           subtitleBuilder: (product) =>
-              '${CurrencyUtils.format(product.price)} · GST ${product.gstPercent.toStringAsFixed(0)}%',
+              '${CurrencyUtils.format(product.price)} · GST ${product.gstPercent.toStringAsFixed(0)}%'
+              '${product.barcode.isEmpty ? '' : ' · ${product.barcode}'}',
           filter: (product, query) {
             final q = query.toLowerCase();
             return product.name.toLowerCase().contains(q) ||
-                product.hsnCode.toLowerCase().contains(q);
+                product.hsnCode.toLowerCase().contains(q) ||
+                product.barcode.toLowerCase().contains(q);
           },
         );
       },
     );
 
     if (selected == null || !mounted) return;
+    await _promptQuantityAndAdd(selected);
+  }
 
-    final qty = await _askQuantity(selected);
+  Future<void> _scanBarcode() async {
+    String? code;
+    try {
+      code = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => const BarcodeScannerScreen()),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Scanner failed: $error'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    if (code == null) {
+      // User cancelled.
+      return;
+    }
+    if (code.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid or empty barcode scan')),
+      );
+      return;
+    }
+
+    try {
+      final product = await _productService.findByBarcode(code);
+      if (!mounted) return;
+
+      if (product == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Product not found for barcode "$code"'),
+            backgroundColor: AppTheme.danger,
+          ),
+        );
+        return;
+      }
+
+      await _promptQuantityAndAdd(product);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Barcode lookup failed: $error'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+    }
+  }
+
+  Future<void> _promptQuantityAndAdd(Product product) async {
+    final qty = await _askQuantity(product);
     if (qty == null || !mounted) return;
 
     setState(() {
-      final existingIndex =
-          _cart.indexWhere((line) => line.product.productId == selected.productId);
+      final existingIndex = _cart
+          .indexWhere((line) => line.product.productId == product.productId);
       if (existingIndex >= 0) {
-        _cart[existingIndex].quantity =
-            CurrencyUtils.roundMoney(_cart[existingIndex].quantity + qty);
+        final line = _cart[existingIndex];
+        line.quantity = CurrencyUtils.roundMoney(line.quantity + qty);
+        if (line.discount > line.grossAmount) {
+          line.discount = line.grossAmount;
+        }
       } else {
-        _cart.add(_CartLine(product: selected, quantity: qty));
+        _cart.add(_CartLine(product: product, quantity: qty));
       }
     });
   }
@@ -177,10 +288,16 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
     );
   }
 
-  Future<void> _editQuantity(_CartLine line) async {
-    final qty = await _askQuantity(line.product, initial: line.quantity);
-    if (qty == null || !mounted) return;
-    setState(() => line.quantity = qty);
+  Future<void> _editLine(_CartLine line) async {
+    final result = await showDialog<_LineEditResult>(
+      context: context,
+      builder: (context) => _LineEditDialog(line: line),
+    );
+    if (result == null || !mounted) return;
+    setState(() {
+      line.quantity = result.quantity;
+      line.discount = result.discount;
+    });
   }
 
   Future<void> _generateInvoice() async {
@@ -201,6 +318,30 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
       return;
     }
 
+    double? paidInput;
+    if (_paymentStatus == PaymentStatus.partial) {
+      final text = _paidAmountController.text.trim();
+      paidInput = text.isEmpty ? null : double.tryParse(text);
+      if (text.isNotEmpty && paidInput == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a valid paid amount')),
+        );
+        return;
+      }
+    }
+
+    final paymentError = Bill.validatePayment(
+      paymentStatus: _paymentStatus,
+      grandTotal: calc.grandTotal,
+      paidAmount: paidInput,
+    );
+    if (paymentError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(paymentError)),
+      );
+      return;
+    }
+
     setState(() => _saving = true);
     try {
       final bill = await _billService.createBill(
@@ -209,6 +350,8 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
         subtotal: calc.subtotal,
         totalTax: calc.totalTax,
         grandTotal: calc.grandTotal,
+        paymentStatus: _paymentStatus,
+        paidAmount: paidInput,
       );
 
       if (!mounted) return;
@@ -261,6 +404,8 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
 
     final calc = _calculation;
 
+    final canManageShop = SessionService.instance.canManageShop;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Create Invoice')),
       body: ListView(
@@ -271,6 +416,12 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
               leading: const Icon(Icons.storefront_outlined),
               title: Text(_shopConfig?.shopName ?? 'Shop'),
               subtitle: Text('Shop state: ${_shopConfig?.state ?? '-'}'),
+              trailing: Icon(
+                canManageShop
+                    ? Icons.edit_outlined
+                    : Icons.chevron_right,
+              ),
+              onTap: _saving ? null : _editShopConfig,
             ),
           ),
           const SizedBox(height: 12),
@@ -321,6 +472,11 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
               ),
               const Spacer(),
               TextButton.icon(
+                onPressed: _saving ? null : _scanBarcode,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Scan'),
+              ),
+              TextButton.icon(
                 onPressed: _saving ? null : _addProduct,
                 icon: const Icon(Icons.add),
                 label: const Text('Add product'),
@@ -351,15 +507,19 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                       ),
                       subtitle: Text(
                         '${CurrencyUtils.format(_cart[i].product.price)}'
-                        ' · GST ${_cart[i].product.gstPercent.toStringAsFixed(0)}%',
+                        ' · GST ${_cart[i].product.gstPercent.toStringAsFixed(0)}%'
+                        '${_cart[i].discount > 0 ? ' · Disc ${CurrencyUtils.format(_cart[i].discount)}' : ''}',
                       ),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           TextButton(
                             onPressed:
-                                _saving ? null : () => _editQuantity(_cart[i]),
-                            child: Text('Qty ${_cart[i].quantity}'),
+                                _saving ? null : () => _editLine(_cart[i]),
+                            child: Text(
+                              'Qty ${_cart[i].quantity}'
+                              '${_cart[i].discount > 0 ? ' · Disc' : ''}',
+                            ),
                           ),
                           IconButton(
                             onPressed: _saving
@@ -370,6 +530,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
                           ),
                         ],
                       ),
+                      onTap: _saving ? null : () => _editLine(_cart[i]),
                     ),
                   ],
                 ],
@@ -390,10 +551,86 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
               subtotal: calc.subtotal,
               totalTax: calc.totalTax,
               grandTotal: calc.grandTotal,
+              totalGross: calc.totalGross,
+              totalDiscount: calc.totalDiscount,
               totalCgst: calc.totalCgst,
               totalSgst: calc.totalSgst,
               totalIgst: calc.totalIgst,
               isIntraState: _isIntraState,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Payment',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      // ignore: deprecated_member_use
+                      value: _paymentStatus,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Payment status *',
+                        prefixIcon: Icon(Icons.payments_outlined),
+                      ),
+                      items: PaymentStatus.values
+                          .map(
+                            (status) => DropdownMenuItem(
+                              value: status,
+                              child: Text(PaymentStatus.label(status)),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _saving
+                          ? null
+                          : (value) {
+                              if (value == null) return;
+                              setState(() {
+                                _paymentStatus = value;
+                                if (value != PaymentStatus.partial) {
+                                  _paidAmountController.clear();
+                                }
+                              });
+                            },
+                    ),
+                    if (_paymentStatus == PaymentStatus.partial) ...[
+                      const SizedBox(height: 14),
+                      TextFormField(
+                        controller: _paidAmountController,
+                        enabled: !_saving,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                        ],
+                        onChanged: (_) => setState(() {}),
+                        decoration: InputDecoration(
+                          labelText: 'Paid amount (₹) *',
+                          prefixIcon: const Icon(Icons.currency_rupee),
+                          helperText:
+                              'Must be more than 0 and less than ${CurrencyUtils.format(calc.grandTotal)}',
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Text(
+                      _paymentPreviewText(calc.grandTotal),
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
         ],
@@ -420,6 +657,148 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _LineEditResult {
+  const _LineEditResult({required this.quantity, required this.discount});
+
+  final double quantity;
+  final double discount;
+}
+
+class _LineEditDialog extends StatefulWidget {
+  const _LineEditDialog({required this.line});
+
+  final _CartLine line;
+
+  @override
+  State<_LineEditDialog> createState() => _LineEditDialogState();
+}
+
+class _LineEditDialogState extends State<_LineEditDialog> {
+  late final TextEditingController _qtyController;
+  late final TextEditingController _discountController;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final qty = widget.line.quantity;
+    _qtyController = TextEditingController(
+      text: qty == qty.roundToDouble()
+          ? qty.toStringAsFixed(0)
+          : qty.toStringAsFixed(2),
+    );
+    final disc = widget.line.discount;
+    _discountController = TextEditingController(
+      text: disc == 0
+          ? ''
+          : (disc == disc.roundToDouble()
+              ? disc.toStringAsFixed(0)
+              : disc.toStringAsFixed(2)),
+    );
+  }
+
+  @override
+  void dispose() {
+    _qtyController.dispose();
+    _discountController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final qty = double.tryParse(_qtyController.text.trim());
+    if (qty == null || qty <= 0) {
+      setState(() => _error = 'Enter a valid quantity');
+      return;
+    }
+
+    final discountText = _discountController.text.trim();
+    final discount = discountText.isEmpty
+        ? 0.0
+        : double.tryParse(discountText);
+    if (discount == null) {
+      setState(() => _error = 'Enter a valid discount');
+      return;
+    }
+
+    final gross = CurrencyUtils.roundMoney(widget.line.product.price * qty);
+    final validation = GstService.validateDiscount(discount, gross);
+    if (validation != null) {
+      setState(() => _error = validation);
+      return;
+    }
+
+    Navigator.pop(
+      context,
+      _LineEditResult(
+        quantity: CurrencyUtils.roundMoney(qty),
+        discount: CurrencyUtils.roundMoney(discount),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.line.product.name),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _qtyController,
+            autofocus: true,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+            ],
+            decoration: const InputDecoration(
+              labelText: 'Quantity *',
+            ),
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+          ),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _discountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+            ],
+            decoration: InputDecoration(
+              labelText: 'Discount (₹)',
+              helperText:
+                  'Max ${CurrencyUtils.format(widget.line.product.price)} × qty',
+              prefixIcon: const Icon(Icons.discount_outlined),
+            ),
+            onChanged: (_) {
+              if (_error != null) setState(() => _error = null);
+            },
+            onSubmitted: (_) => _submit(),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _error!,
+              style: const TextStyle(color: AppTheme.danger, fontSize: 13),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

@@ -58,6 +58,27 @@ void main() {
       expect(result.length, 1);
       expect(result.first.partyName, 'Acme Traders');
     });
+
+    test('filters by inclusive date range', () {
+      final result = service.filterBills(
+        bills,
+        '',
+        from: DateTime(2026, 3, 2),
+        to: DateTime(2026, 3, 2),
+      );
+      expect(result.length, 1);
+      expect(result.first.invoiceNo, 'INV-0002');
+    });
+
+    test('combines text search with date range', () {
+      final result = service.filterBills(
+        bills,
+        'acme',
+        from: DateTime(2026, 3, 2),
+        to: DateTime(2026, 3, 31),
+      );
+      expect(result, isEmpty);
+    });
   });
 
   group('BillService.buildDashboardStats', () {
@@ -96,6 +117,8 @@ void main() {
       expect(stats.todayBillCount, 1);
       expect(stats.monthlySales, 354);
       expect(stats.monthlyBillCount, 2);
+      expect(stats.todayTax, 18);
+      expect(stats.monthlyTax, 54);
       expect(stats.totalTax, 104);
       expect(stats.recentBills.length, 3);
     });

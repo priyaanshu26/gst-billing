@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../models/product.dart';
 import '../services/product_service.dart';
+import '../services/session_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency_utils.dart';
+import 'product_details_screen.dart';
 import 'product_form_screen.dart';
 
 class ProductListScreen extends StatefulWidget {
@@ -30,6 +32,33 @@ class _ProductListScreenState extends State<ProductListScreen> {
         builder: (_) => ProductFormScreen(product: product),
       ),
     );
+  }
+
+  void _openDetails(Product product) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProductDetailsScreen(product: product),
+      ),
+    );
+  }
+
+  Future<void> _assignBarcode(Product product) async {
+    try {
+      final updated = await _productService.assignBarcodeIfMissing(product);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Barcode ${updated.barcode} assigned')),
+      );
+      _openDetails(updated);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not assign barcode: $error'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+    }
   }
 
   Future<void> _confirmDelete(Product product) async {
@@ -77,16 +106,18 @@ class _ProductListScreenState extends State<ProductListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canManage = SessionService.instance.canManageShop;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Products'),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'fab_products',
-        onPressed: () => _openForm(),
-        icon: const Icon(Icons.add_box_outlined),
-        label: const Text('Add Product'),
-      ),
+      primary: false,
+      floatingActionButton: canManage
+          ? FloatingActionButton.extended(
+              heroTag: 'fab_products',
+              onPressed: () => _openForm(),
+              icon: const Icon(Icons.add_box_outlined),
+              label: const Text('Add Product'),
+            )
+          : null,
       body: Column(
         children: [
           Padding(
@@ -94,7 +125,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Search by name, HSN, GST %...',
+                hintText: 'Search by name, HSN, barcode...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _query.isEmpty
                     ? null
@@ -142,7 +173,9 @@ class _ProductListScreenState extends State<ProductListScreen> {
                       padding: const EdgeInsets.all(24),
                       child: Text(
                         _query.isEmpty
-                            ? 'No products yet.\nTap Add Product to create one.'
+                            ? canManage
+                                ? 'No products yet.\nTap Add Product to create one.'
+                                : 'No products yet.\nAsk the shop owner to add one.'
                             : 'No products match your search.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge,
@@ -158,6 +191,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
                       const SizedBox(height: 8),
                   itemBuilder: (context, index) {
                     final product = products[index];
+                    final missingBarcode = product.barcode.trim().isEmpty;
                     return Card(
                       child: ListTile(
                         leading: CircleAvatar(
@@ -176,31 +210,48 @@ class _ProductListScreenState extends State<ProductListScreen> {
                             'GST ${product.gstPercent.toStringAsFixed(0)}%',
                             if (product.hsnCode.isNotEmpty)
                               'HSN ${product.hsnCode}',
+                            if (!missingBarcode) 'Barcode ${product.barcode}',
+                            if (missingBarcode) 'No barcode',
                           ].join(' · '),
                         ),
                         trailing: PopupMenuButton<String>(
                           onSelected: (value) {
-                            if (value == 'edit') {
+                            if (value == 'details') {
+                              _openDetails(product);
+                            } else if (value == 'edit') {
                               _openForm(product: product);
+                            } else if (value == 'barcode') {
+                              _assignBarcode(product);
                             } else if (value == 'delete') {
                               _confirmDelete(product);
                             }
                           },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: Text('Edit'),
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'details',
+                              child: Text('View details'),
                             ),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: Text(
-                                'Delete',
-                                style: TextStyle(color: AppTheme.danger),
+                            if (canManage) ...[
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: Text('Edit'),
                               ),
-                            ),
+                              if (missingBarcode)
+                                const PopupMenuItem(
+                                  value: 'barcode',
+                                  child: Text('Generate barcode'),
+                                ),
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Text(
+                                  'Delete',
+                                  style: TextStyle(color: AppTheme.danger),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
-                        onTap: () => _openForm(product: product),
+                        onTap: () => _openDetails(product),
                       ),
                     );
                   },

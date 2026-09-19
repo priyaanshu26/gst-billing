@@ -1,9 +1,120 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Hackathon MVP: open access. Tighten before production.
-    match /{document=**} {
-      allow read, write: if true;
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function userShopId() {
+      return userDoc().shopId;
+    }
+
+    function isOwner() {
+      return userDoc().role == 'owner';
+    }
+
+    function sameShop(shopId) {
+      return signedIn() && userShopId() == shopId;
+    }
+
+    // True while bootstrapping a brand-new shop (batch create before user doc exists).
+    function ownsShop(shopId) {
+      return signedIn() &&
+        get(/databases/$(database)/documents/shops/$(shopId)).data.ownerUid
+          == request.auth.uid;
+    }
+
+    function canAccessShop(shopId) {
+      return sameShop(shopId) || ownsShop(shopId);
+    }
+
+    function canManageShop(shopId) {
+      return canAccessShop(shopId) && isOwner();
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (
+        request.auth.uid == uid ||
+        resource.data.shopId == userShopId()
+      );
+
+      allow create: if signedIn() && (
+        (
+          request.auth.uid == uid &&
+          request.resource.data.uid == uid &&
+          request.resource.data.role == 'owner' &&
+          request.resource.data.shopId is string
+        ) ||
+        (
+          isOwner() &&
+          request.resource.data.role == 'staff' &&
+          request.resource.data.shopId == userShopId() &&
+          request.resource.data.uid == uid
+        )
+      );
+
+      allow update: if signedIn() && (
+        request.auth.uid == uid ||
+        (isOwner() && resource.data.shopId == userShopId())
+      );
+
+      allow delete: if signedIn() &&
+        isOwner() &&
+        resource.data.shopId == userShopId() &&
+        resource.data.role == 'staff';
+    }
+
+    match /shops/{shopId} {
+      allow read: if canAccessShop(shopId);
+
+      allow create: if signedIn() &&
+        request.resource.data.ownerUid == request.auth.uid;
+
+      allow update: if sameShop(shopId) && isOwner();
+      allow delete: if false;
+
+      match /parties/{docId} {
+        allow read: if canAccessShop(shopId);
+        allow create, update, delete: if canManageShop(shopId);
+      }
+
+      match /products/{docId} {
+        allow read: if canAccessShop(shopId);
+        allow create, update, delete: if canManageShop(shopId);
+      }
+
+      match /settings/{docId} {
+        allow read: if canAccessShop(shopId);
+        allow create, update, delete: if canManageShop(shopId);
+      }
+
+      match /bills/{docId} {
+        allow read: if canAccessShop(shopId);
+        allow create: if canAccessShop(shopId);
+        allow update, delete: if canManageShop(shopId);
+      }
+
+      match /counters/{docId} {
+        allow read: if canAccessShop(shopId);
+        // Staff may increment the invoice counter when creating a bill.
+        // Product barcode counters stay owner-only.
+        allow write: if canAccessShop(shopId) && (
+          isOwner() || docId == 'invoice'
+        );
+      }
+
+      match /{subcollection}/{docId} {
+        allow read: if canAccessShop(shopId);
+      }
+
+      match /{subcollection}/{docId}/{document=**} {
+        allow read: if canAccessShop(shopId);
+      }
     }
   }
 }

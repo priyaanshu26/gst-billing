@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gst_billing/models/bill_item.dart';
 import 'package:gst_billing/models/product.dart';
 import 'package:gst_billing/services/gst_service.dart';
 
@@ -24,6 +25,8 @@ void main() {
       );
 
       expect(item.taxableAmount, 200);
+      expect(item.grossAmount, 200);
+      expect(item.discount, 0);
       expect(item.cgst, 18);
       expect(item.sgst, 18);
       expect(item.igst, 0);
@@ -171,6 +174,363 @@ void main() {
       expect(draft.quantity, 2);
       expect(draft.rate, 80);
       expect(draft.gstPercent, 12);
+    });
+  });
+
+  group('GST rate slabs (0 / 5 / 12 / 18 / 28)', () {
+    test('0% produces zero GST (intra and inter)', () {
+      for (final intra in [true, false]) {
+        final item = GstService.calculateLineItem(
+          productId: 'p0',
+          name: 'Exempt',
+          quantity: 10,
+          rate: 100,
+          gstPercent: 0,
+          isIntraState: intra,
+        );
+        expect(item.taxableAmount, 1000);
+        expect(item.cgst, 0);
+        expect(item.sgst, 0);
+        expect(item.igst, 0);
+        expect(item.lineTotal, 1000);
+      }
+    });
+
+    test('5% works for intra-state and inter-state', () {
+      final intra = GstService.calculateLineItem(
+        productId: 'p5',
+        name: 'Slab5',
+        quantity: 1,
+        rate: 200,
+        gstPercent: 5,
+        isIntraState: true,
+      );
+      expect(intra.taxableAmount, 200);
+      expect(intra.cgst, 5);
+      expect(intra.sgst, 5);
+      expect(intra.igst, 0);
+      expect(intra.lineTotal, 210);
+
+      final inter = GstService.calculateLineItem(
+        productId: 'p5',
+        name: 'Slab5',
+        quantity: 1,
+        rate: 200,
+        gstPercent: 5,
+        isIntraState: false,
+      );
+      expect(inter.cgst, 0);
+      expect(inter.sgst, 0);
+      expect(inter.igst, 10);
+      expect(inter.lineTotal, 210);
+    });
+
+    test('12% works for intra-state and inter-state', () {
+      final intra = GstService.calculateLineItem(
+        productId: 'p12',
+        name: 'Slab12',
+        quantity: 2,
+        rate: 100,
+        gstPercent: 12,
+        isIntraState: true,
+      );
+      expect(intra.taxableAmount, 200);
+      expect(intra.cgst, 12);
+      expect(intra.sgst, 12);
+      expect(intra.igst, 0);
+      expect(intra.lineTotal, 224);
+
+      final inter = GstService.calculateLineItem(
+        productId: 'p12',
+        name: 'Slab12',
+        quantity: 2,
+        rate: 100,
+        gstPercent: 12,
+        isIntraState: false,
+      );
+      expect(inter.igst, 24);
+      expect(inter.lineTotal, 224);
+    });
+
+    test('18% works for intra-state and inter-state', () {
+      final intra = GstService.calculateLineItem(
+        productId: 'p18',
+        name: 'Slab18',
+        quantity: 1,
+        rate: 100,
+        gstPercent: 18,
+        isIntraState: true,
+      );
+      expect(intra.cgst, 9);
+      expect(intra.sgst, 9);
+      expect(intra.lineTotal, 118);
+
+      final inter = GstService.calculateLineItem(
+        productId: 'p18',
+        name: 'Slab18',
+        quantity: 1,
+        rate: 100,
+        gstPercent: 18,
+        isIntraState: false,
+      );
+      expect(inter.igst, 18);
+      expect(inter.lineTotal, 118);
+    });
+
+    test('28% works for intra-state and inter-state', () {
+      final intra = GstService.calculateLineItem(
+        productId: 'p28',
+        name: 'Slab28',
+        quantity: 1,
+        rate: 100,
+        gstPercent: 28,
+        isIntraState: true,
+      );
+      expect(intra.taxableAmount, 100);
+      expect(intra.cgst, 14);
+      expect(intra.sgst, 14);
+      expect(intra.igst, 0);
+      expect(intra.lineTotal, 128);
+
+      final inter = GstService.calculateLineItem(
+        productId: 'p28',
+        name: 'Slab28',
+        quantity: 1,
+        rate: 100,
+        gstPercent: 28,
+        isIntraState: false,
+      );
+      expect(inter.cgst, 0);
+      expect(inter.sgst, 0);
+      expect(inter.igst, 28);
+      expect(inter.lineTotal, 128);
+    });
+
+    test('mixed slabs on one bill use each line gstPercent dynamically', () {
+      final result = GstService.calculateBill(
+        shopState: 'Maharashtra',
+        partyState: 'Maharashtra',
+        drafts: const [
+          BillItemDraft(
+            productId: 'a',
+            name: 'A',
+            quantity: 1,
+            rate: 100,
+            gstPercent: 0,
+          ),
+          BillItemDraft(
+            productId: 'b',
+            name: 'B',
+            quantity: 1,
+            rate: 100,
+            gstPercent: 5,
+          ),
+          BillItemDraft(
+            productId: 'c',
+            name: 'C',
+            quantity: 1,
+            rate: 100,
+            gstPercent: 12,
+          ),
+          BillItemDraft(
+            productId: 'd',
+            name: 'D',
+            quantity: 1,
+            rate: 100,
+            gstPercent: 18,
+          ),
+          BillItemDraft(
+            productId: 'e',
+            name: 'E',
+            quantity: 1,
+            rate: 100,
+            gstPercent: 28,
+          ),
+        ],
+      );
+
+      // Tax halves: 0 + 2.5 + 6 + 9 + 14 = 31.5 each of CGST/SGST
+      expect(result.subtotal, 500);
+      expect(result.totalCgst, 31.5);
+      expect(result.totalSgst, 31.5);
+      expect(result.totalIgst, 0);
+      expect(result.totalTax, 63);
+      expect(result.grandTotal, 563);
+    });
+  });
+
+  group('per-item discount', () {
+    test('GST is calculated on taxableAmount after discount (intra)', () {
+      // gross 200, discount 40 → taxable 160 → 18% → CGST/SGST 14.40 each
+      final item = GstService.calculateLineItem(
+        productId: 'p1',
+        name: 'Widget',
+        quantity: 2,
+        rate: 100,
+        gstPercent: 18,
+        isIntraState: true,
+        discount: 40,
+      );
+
+      expect(item.grossAmount, 200);
+      expect(item.discount, 40);
+      expect(item.taxableAmount, 160);
+      expect(item.cgst, 14.4);
+      expect(item.sgst, 14.4);
+      expect(item.igst, 0);
+      expect(item.lineTotal, 188.8);
+    });
+
+    test('GST is calculated on taxableAmount after discount (inter)', () {
+      final item = GstService.calculateLineItem(
+        productId: 'p1',
+        name: 'Widget',
+        quantity: 2,
+        rate: 100,
+        gstPercent: 18,
+        isIntraState: false,
+        discount: 40,
+      );
+
+      expect(item.grossAmount, 200);
+      expect(item.taxableAmount, 160);
+      expect(item.cgst, 0);
+      expect(item.sgst, 0);
+      expect(item.igst, 28.8);
+      expect(item.lineTotal, 188.8);
+    });
+
+    test('zero discount matches previous behaviour', () {
+      final item = GstService.calculateLineItem(
+        productId: 'p1',
+        name: 'Widget',
+        quantity: 2,
+        rate: 100,
+        gstPercent: 18,
+        isIntraState: true,
+        discount: 0,
+      );
+
+      expect(item.grossAmount, 200);
+      expect(item.discount, 0);
+      expect(item.taxableAmount, 200);
+      expect(item.lineTotal, 236);
+    });
+
+    test('rejects negative discount', () {
+      expect(
+        () => GstService.calculateLineItem(
+          productId: 'p1',
+          name: 'Widget',
+          quantity: 1,
+          rate: 100,
+          gstPercent: 18,
+          isIntraState: true,
+          discount: -1,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        GstService.validateDiscount(-5, 100),
+        'Discount cannot be negative',
+      );
+    });
+
+    test('rejects discount exceeding grossAmount', () {
+      expect(
+        () => GstService.calculateLineItem(
+          productId: 'p1',
+          name: 'Widget',
+          quantity: 1,
+          rate: 100,
+          gstPercent: 18,
+          isIntraState: true,
+          discount: 100.01,
+        ),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        GstService.validateDiscount(150, 100),
+        'Discount cannot exceed item amount',
+      );
+    });
+
+    test('allows full discount so taxable and tax are zero', () {
+      final item = GstService.calculateLineItem(
+        productId: 'p1',
+        name: 'Free',
+        quantity: 1,
+        rate: 100,
+        gstPercent: 18,
+        isIntraState: true,
+        discount: 100,
+      );
+
+      expect(item.taxableAmount, 0);
+      expect(item.cgst, 0);
+      expect(item.sgst, 0);
+      expect(item.lineTotal, 0);
+    });
+
+    test('bill totals include totalGross and totalDiscount', () {
+      final result = GstService.calculateBill(
+        shopState: 'Maharashtra',
+        partyState: 'Maharashtra',
+        drafts: const [
+          BillItemDraft(
+            productId: 'a',
+            name: 'A',
+            quantity: 1,
+            rate: 100,
+            gstPercent: 18,
+            discount: 20,
+          ),
+        ],
+      );
+
+      expect(result.totalGross, 100);
+      expect(result.totalDiscount, 20);
+      expect(result.subtotal, 80);
+      expect(result.totalCgst, 7.2);
+      expect(result.totalSgst, 7.2);
+      expect(result.grandTotal, 94.4);
+    });
+
+    test('BillItem snapshot round-trips grossAmount and discount', () {
+      final item = GstService.calculateLineItem(
+        productId: 'p1',
+        name: 'Widget',
+        quantity: 3,
+        rate: 50,
+        gstPercent: 12,
+        isIntraState: true,
+        discount: 15,
+      );
+
+      final restored = BillItem.fromMap(item.toMap());
+      expect(restored.grossAmount, item.grossAmount);
+      expect(restored.discount, item.discount);
+      expect(restored.taxableAmount, item.taxableAmount);
+      expect(restored.lineTotal, item.lineTotal);
+    });
+
+    test('legacy Firestore maps without grossAmount still load', () {
+      final restored = BillItem.fromMap({
+        'productId': 'p1',
+        'name': 'Old',
+        'quantity': 2,
+        'rate': 100,
+        'gstPercent': 18,
+        'taxableAmount': 200,
+        'cgst': 18,
+        'sgst': 18,
+        'igst': 0,
+        'lineTotal': 236,
+      });
+
+      expect(restored.grossAmount, 200);
+      expect(restored.discount, 0);
+      expect(restored.taxableAmount, 200);
     });
   });
 

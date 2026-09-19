@@ -8,12 +8,15 @@ import '../models/party.dart';
 import '../utils/currency_utils.dart';
 import '../utils/date_utils.dart';
 import 'firebase_service.dart';
+import 'session_service.dart';
 
 class DashboardStats {
   final double todaySales;
   final double monthlySales;
   final int todayBillCount;
   final int monthlyBillCount;
+  final double todayTax;
+  final double monthlyTax;
   final double totalTax;
   final List<Bill> recentBills;
 
@@ -22,28 +25,59 @@ class DashboardStats {
     required this.monthlySales,
     required this.todayBillCount,
     required this.monthlyBillCount,
+    required this.todayTax,
+    required this.monthlyTax,
     required this.totalTax,
     required this.recentBills,
   });
 }
 
 class BillService {
+  String get _shopId => SessionService.instance.requireShopId();
+
   CollectionReference<Map<String, dynamic>> get _bills {
-    return FirebaseService.firestore.collection(Collections.bills);
+    return FirebaseService.shopCollection(_shopId, Collections.bills);
   }
 
   DocumentReference<Map<String, dynamic>> get _invoiceCounter {
-    return FirebaseService.firestore
-        .collection(Collections.counters)
+    return FirebaseService.shopCollection(_shopId, Collections.counters)
         .doc(Collections.invoiceCounterDocId);
   }
 
+  /// Newest first. Sorted in memory so History does not depend on a Firestore
+  /// composite/single-field index, and one malformed bill cannot blank the page.
   Stream<List<Bill>> watchBills() {
-    return _bills.orderBy('invoiceDate', descending: true).snapshots().map(
-          (snapshot) => snapshot.docs
-              .map((doc) => Bill.fromMap(doc.id, doc.data()))
-              .toList(),
-        );
+    return _bills.snapshots().map((snapshot) {
+      final bills = <Bill>[];
+      for (final doc in snapshot.docs) {
+        try {
+          bills.add(Bill.fromMap(doc.id, doc.data()));
+        } catch (_) {
+          // Skip unreadable documents so the rest of history still loads.
+        }
+      }
+      bills.sort((a, b) => b.invoiceDate.compareTo(a.invoiceDate));
+      return bills;
+    });
+  }
+
+  /// Bills for one party, newest first. Sorted in memory so Firestore does not
+  /// need a composite index on (partyId, invoiceDate).
+  Stream<List<Bill>> watchPartyBills(String partyId) {
+    return _bills.where('partyId', isEqualTo: partyId).snapshots().map(
+      (snapshot) {
+        final bills = <Bill>[];
+        for (final doc in snapshot.docs) {
+          try {
+            bills.add(Bill.fromMap(doc.id, doc.data()));
+          } catch (_) {
+            // Skip unreadable documents so party history still loads.
+          }
+        }
+        bills.sort((a, b) => b.invoiceDate.compareTo(a.invoiceDate));
+        return bills;
+      },
+    );
   }
 
   Future<Bill?> getBill(String billId) async {
@@ -52,13 +86,27 @@ class BillService {
     return Bill.fromMap(doc.id, doc.data()!);
   }
 
-  List<Bill> filterBills(List<Bill> bills, String query) {
+  /// Text search on invoice no / party / GSTIN, plus an inclusive date range.
+  List<Bill> filterBills(
+    List<Bill> bills,
+    String query, {
+    DateTime? from,
+    DateTime? to,
+  }) {
     final q = query.trim().toLowerCase();
-    if (q.isEmpty) return bills;
+    final start = from == null ? null : AppDateUtils.startOfDay(from);
+    final end = to == null ? null : AppDateUtils.endOfDay(to);
+
     return bills.where((bill) {
-      return bill.invoiceNo.toLowerCase().contains(q) ||
-          bill.partyName.toLowerCase().contains(q) ||
-          bill.partyGSTIN.toLowerCase().contains(q);
+      if (q.isNotEmpty) {
+        final matchesText = bill.invoiceNo.toLowerCase().contains(q) ||
+            bill.partyName.toLowerCase().contains(q) ||
+            bill.partyGSTIN.toLowerCase().contains(q);
+        if (!matchesText) return false;
+      }
+      if (start != null && bill.invoiceDate.isBefore(start)) return false;
+      if (end != null && bill.invoiceDate.isAfter(end)) return false;
+      return true;
     }).toList();
   }
 
@@ -72,16 +120,20 @@ class BillService {
     var monthlySales = 0.0;
     var todayCount = 0;
     var monthlyCount = 0;
+    var todayTax = 0.0;
+    var monthlyTax = 0.0;
     var totalTax = 0.0;
 
     for (final bill in bills) {
       totalTax += bill.totalTax;
       if (AppDateUtils.isSameDay(bill.invoiceDate, reference)) {
         todaySales += bill.grandTotal;
+        todayTax += bill.totalTax;
         todayCount += 1;
       }
       if (AppDateUtils.isSameMonth(bill.invoiceDate, reference)) {
         monthlySales += bill.grandTotal;
+        monthlyTax += bill.totalTax;
         monthlyCount += 1;
       }
     }
@@ -91,6 +143,8 @@ class BillService {
       monthlySales: CurrencyUtils.roundMoney(monthlySales),
       todayBillCount: todayCount,
       monthlyBillCount: monthlyCount,
+      todayTax: CurrencyUtils.roundMoney(todayTax),
+      monthlyTax: CurrencyUtils.roundMoney(monthlyTax),
       totalTax: CurrencyUtils.roundMoney(totalTax),
       recentBills: bills.take(recentLimit).toList(),
     );
@@ -103,11 +157,28 @@ class BillService {
     required double subtotal,
     required double totalTax,
     required double grandTotal,
+    String paymentStatus = PaymentStatus.unpaid,
+    double? paidAmount,
     DateTime? invoiceDate,
   }) async {
     if (items.isEmpty) {
       throw ArgumentError('Invoice must have at least one item');
     }
+
+    final paymentError = Bill.validatePayment(
+      paymentStatus: paymentStatus,
+      grandTotal: grandTotal,
+      paidAmount: paidAmount,
+    );
+    if (paymentError != null) {
+      throw ArgumentError(paymentError);
+    }
+
+    final payment = Bill.resolvePayment(
+      paymentStatus: paymentStatus,
+      grandTotal: grandTotal,
+      paidAmount: paidAmount,
+    );
 
     final date = invoiceDate ?? DateTime.now();
 
@@ -137,6 +208,9 @@ class BillService {
         totalTax: totalTax,
         grandTotal: grandTotal,
         status: BillStatus.generated,
+        paymentStatus: payment.paymentStatus,
+        paidAmount: payment.paidAmount,
+        remainingAmount: payment.remainingAmount,
       );
 
       transaction.set(

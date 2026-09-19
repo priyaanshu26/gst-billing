@@ -10,6 +10,8 @@ class InvoiceTotalsCard extends StatelessWidget {
     required this.subtotal,
     required this.totalTax,
     required this.grandTotal,
+    this.totalGross,
+    this.totalDiscount,
     this.totalCgst,
     this.totalSgst,
     this.totalIgst,
@@ -19,6 +21,8 @@ class InvoiceTotalsCard extends StatelessWidget {
   final double subtotal;
   final double totalTax;
   final double grandTotal;
+  final double? totalGross;
+  final double? totalDiscount;
   final double? totalCgst;
   final double? totalSgst;
   final double? totalIgst;
@@ -26,12 +30,22 @@ class InvoiceTotalsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final discount = totalDiscount ?? 0;
+    final showGross = totalGross != null && discount > 0;
+
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            _row('Subtotal', CurrencyUtils.format(subtotal)),
+            if (showGross)
+              _row('Gross', CurrencyUtils.format(totalGross!)),
+            if (discount > 0)
+              _row('Discount', '- ${CurrencyUtils.format(discount)}'),
+            _row(
+              discount > 0 ? 'Taxable subtotal' : 'Subtotal',
+              CurrencyUtils.format(subtotal),
+            ),
             if (isIntraState == true) ...[
               _row('CGST', CurrencyUtils.format(totalCgst ?? 0)),
               _row('SGST', CurrencyUtils.format(totalSgst ?? 0)),
@@ -89,9 +103,12 @@ class InvoiceItemsTable extends StatelessWidget {
               ),
               subtitle: Text(
                 'Qty ${items[i].quantity} × ${CurrencyUtils.format(items[i].rate)}'
+                '${items[i].discount > 0 ? ' · Disc ${CurrencyUtils.format(items[i].discount)}' : ''}'
+                ' · Taxable ${CurrencyUtils.format(items[i].taxableAmount)}'
                 ' · GST ${items[i].gstPercent.toStringAsFixed(0)}%'
                 '${items[i].hsnCode.isEmpty ? '' : ' · HSN ${items[i].hsnCode}'}',
               ),
+              isThreeLine: items[i].discount > 0,
               trailing: Text(
                 CurrencyUtils.format(items[i].lineTotal),
                 style: const TextStyle(fontWeight: FontWeight.w600),

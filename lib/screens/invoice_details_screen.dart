@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../utils/currency_utils.dart';
 import '../utils/date_utils.dart';
 import '../widgets/invoice_summary_widgets.dart';
+import '../widgets/payment_status_chip.dart';
 
 class InvoiceDetailsScreen extends StatefulWidget {
   const InvoiceDetailsScreen({
@@ -188,18 +189,15 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
                             ?.copyWith(fontWeight: FontWeight.w700),
                       ),
                     ),
-                    Chip(
-                      label: const Text('Read-only'),
-                      backgroundColor: Colors.white,
-                      side: BorderSide(color: Colors.grey.shade300),
-                    ),
+                    PaymentStatusChip(paymentStatus: bill.paymentStatus),
                   ],
                 ),
                 const SizedBox(height: 4),
                 Text(AppDateUtils.formatDisplay(bill.invoiceDate)),
                 const SizedBox(height: 4),
                 Text(
-                  'Status: ${bill.status}',
+                  'Paid ${CurrencyUtils.format(bill.paidAmount)}'
+                  ' · Remaining ${CurrencyUtils.format(bill.remainingAmount)}',
                   style: TextStyle(color: Colors.grey.shade700),
                 ),
               ],
@@ -237,10 +235,35 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
           subtotal: bill.subtotal,
           totalTax: bill.totalTax,
           grandTotal: bill.grandTotal,
+          totalGross: summary.totalGross,
+          totalDiscount: summary.totalDiscount,
           totalCgst: summary.totalCgst,
           totalSgst: summary.totalSgst,
           totalIgst: summary.totalIgst,
           isIntraState: isIntra,
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _paymentRow(
+                  'Payment status',
+                  PaymentStatus.label(bill.paymentStatus),
+                ),
+                _paymentRow(
+                  'Paid amount',
+                  CurrencyUtils.format(bill.paidAmount),
+                ),
+                _paymentRow(
+                  'Remaining',
+                  CurrencyUtils.format(bill.remainingAmount),
+                  emphasize: bill.remainingAmount > 0,
+                ),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: 16),
         Text(
@@ -252,6 +275,25 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
               ),
         ),
       ],
+    );
+  }
+
+  Widget _paymentRow(String label, String value, {bool emphasize = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: emphasize ? AppTheme.warning : null,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

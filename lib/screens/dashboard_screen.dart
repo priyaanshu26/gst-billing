@@ -5,7 +5,6 @@ import '../services/bill_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency_utils.dart';
 import '../utils/date_utils.dart';
-import 'create_invoice_screen.dart';
 import 'invoice_details_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -16,22 +15,7 @@ class DashboardScreen extends StatelessWidget {
     final billService = BillService();
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Dashboard'),
-        actions: [
-          IconButton(
-            tooltip: 'Create Invoice',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const CreateInvoiceScreen(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.add_box_outlined),
-          ),
-        ],
-      ),
+      primary: false,
       body: StreamBuilder<List<Bill>>(
         stream: billService.watchBills(),
         builder: (context, snapshot) {
@@ -86,6 +70,11 @@ class DashboardScreen extends StatelessWidget {
                     icon: Icons.receipt_outlined,
                   ),
                   _StatCard(
+                    label: "Today's tax",
+                    value: CurrencyUtils.format(stats.todayTax),
+                    icon: Icons.percent_outlined,
+                  ),
+                  _StatCard(
                     label: 'Monthly sales',
                     value: CurrencyUtils.format(stats.monthlySales),
                     icon: Icons.calendar_month_outlined,
@@ -95,11 +84,16 @@ class DashboardScreen extends StatelessWidget {
                     value: '${stats.monthlyBillCount}',
                     icon: Icons.summarize_outlined,
                   ),
+                  _StatCard(
+                    label: 'Monthly tax',
+                    value: CurrencyUtils.format(stats.monthlyTax),
+                    icon: Icons.account_balance_wallet_outlined,
+                  ),
                 ],
               ),
               const SizedBox(height: 12),
               _StatCard(
-                label: 'Total tax',
+                label: 'Total tax collected (all time)',
                 value: CurrencyUtils.format(stats.totalTax),
                 icon: Icons.account_balance_outlined,
                 wide: true,

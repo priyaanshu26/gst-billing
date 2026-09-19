@@ -7,7 +7,16 @@ class BillItem {
   final double quantity;
   final double rate;
   final double gstPercent;
+
+  /// rate × quantity (before discount).
+  final double grossAmount;
+
+  /// Per-item discount amount (₹), applied before GST.
+  final double discount;
+
+  /// grossAmount − discount (GST base).
   final double taxableAmount;
+
   final double cgst;
   final double sgst;
   final double igst;
@@ -20,6 +29,8 @@ class BillItem {
     required this.quantity,
     required this.rate,
     required this.gstPercent,
+    required this.grossAmount,
+    this.discount = 0,
     required this.taxableAmount,
     required this.cgst,
     required this.sgst,
@@ -28,14 +39,27 @@ class BillItem {
   });
 
   factory BillItem.fromMap(Map<String, dynamic> map) {
+    final quantity = parseDouble(map['quantity']);
+    final rate = parseDouble(map['rate']);
+    final grossFromRateQty = double.parse((rate * quantity).toStringAsFixed(2));
+    final grossAmount = map.containsKey('grossAmount')
+        ? parseDouble(map['grossAmount'])
+        : grossFromRateQty;
+    final discount = parseDouble(map['discount']);
+    final taxableAmount = map.containsKey('taxableAmount')
+        ? parseDouble(map['taxableAmount'])
+        : double.parse((grossAmount - discount).toStringAsFixed(2));
+
     return BillItem(
       productId: parseString(map['productId']),
       name: parseString(map['name']),
       hsnCode: parseString(map['hsnCode']),
-      quantity: parseDouble(map['quantity']),
-      rate: parseDouble(map['rate']),
+      quantity: quantity,
+      rate: rate,
       gstPercent: parseDouble(map['gstPercent']),
-      taxableAmount: parseDouble(map['taxableAmount']),
+      grossAmount: grossAmount,
+      discount: discount,
+      taxableAmount: taxableAmount,
       cgst: parseDouble(map['cgst']),
       sgst: parseDouble(map['sgst']),
       igst: parseDouble(map['igst']),
@@ -51,6 +75,8 @@ class BillItem {
       'quantity': quantity,
       'rate': rate,
       'gstPercent': gstPercent,
+      'grossAmount': grossAmount,
+      'discount': discount,
       'taxableAmount': taxableAmount,
       'cgst': cgst,
       'sgst': sgst,

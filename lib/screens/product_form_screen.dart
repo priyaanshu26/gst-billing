@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../constants/gst_slabs.dart';
 import '../models/product.dart';
 import '../services/product_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/validators.dart';
+import 'product_details_screen.dart';
 
 class ProductFormScreen extends StatefulWidget {
   const ProductFormScreen({super.key, this.product});
@@ -18,8 +20,6 @@ class ProductFormScreen extends StatefulWidget {
 }
 
 class _ProductFormScreenState extends State<ProductFormScreen> {
-  static const _gstOptions = [0.0, 5.0, 12.0, 18.0, 28.0];
-
   final _formKey = GlobalKey<FormState>();
   final _productService = ProductService();
 
@@ -39,10 +39,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     _priceController = TextEditingController(
       text: product == null ? '' : product.price.toStringAsFixed(2),
     );
-    _gstPercent = product?.gstPercent ?? 18.0;
-    if (_gstPercent != null && !_gstOptions.contains(_gstPercent)) {
-      // Keep non-standard GST rates editable via dropdown extras.
-    }
+    _gstPercent = product?.gstPercent ?? 18;
   }
 
   @override
@@ -67,32 +64,38 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     setState(() => _saving = true);
     try {
       if (widget.isEditing) {
-        await _productService.updateProduct(
-          widget.product!.copyWith(
-            name: _nameController.text,
-            hsnCode: _hsnController.text,
-            price: price,
-            gstPercent: _gstPercent!,
-          ),
-        );
-      } else {
-        await _productService.addProduct(
+        final updated = widget.product!.copyWith(
           name: _nameController.text,
           hsnCode: _hsnController.text,
           price: price,
           gstPercent: _gstPercent!,
         );
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.isEditing ? 'Product updated' : 'Product added',
+        await _productService.updateProduct(updated);
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Product updated')),
+        );
+        Navigator.of(context).pop(updated);
+      } else {
+        final created = await _productService.addProduct(
+          name: _nameController.text,
+          hsnCode: _hsnController.text,
+          price: price,
+          gstPercent: _gstPercent!,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Product added · Barcode ${created.barcode}'),
           ),
-        ),
-      );
-      Navigator.of(context).pop(true);
+        );
+        // Replace form with details so the generated barcode is visible.
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => ProductDetailsScreen(product: created),
+          ),
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -109,7 +112,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   @override
   Widget build(BuildContext context) {
     final gstItems = <double>{
-      ..._gstOptions,
+      ...GstSlabs.rates,
       ?_gstPercent,
     }.toList()
       ..sort();
@@ -143,7 +146,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                   LengthLimitingTextInputFormatter(8),
                 ],
                 decoration: const InputDecoration(
-                  labelText: 'HSN code',
+                  labelText: 'HSN/SAC Code',
+                  helperText: 'GST classification (not the product barcode)',
                   prefixIcon: Icon(Icons.qr_code_2),
                 ),
               ),
@@ -167,15 +171,17 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
               DropdownButtonFormField<double>(
                 // ignore: deprecated_member_use
                 value: _gstPercent,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'GST % *',
                   prefixIcon: Icon(Icons.percent),
+                  helperText: 'Select a GST slab: 0, 5, 12, 18 or 28%',
                 ),
                 items: gstItems
                     .map(
                       (rate) => DropdownMenuItem(
                         value: rate,
-                        child: Text('${rate.toStringAsFixed(0)}%'),
+                        child: Text(GstSlabs.label(rate)),
                       ),
                     )
                     .toList(),
@@ -187,6 +193,22 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                   return null;
                 },
               ),
+              if (!widget.isEditing) ...[
+                const SizedBox(height: 12),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(
+                      'A unique barcode (100001, 100002, …) will be generated '
+                      'automatically when you save. You cannot enter it manually.',
+                      style: TextStyle(
+                        color: AppTheme.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: _saving ? null : _save,

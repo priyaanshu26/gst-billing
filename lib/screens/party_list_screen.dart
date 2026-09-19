@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../models/party.dart';
 import '../services/party_service.dart';
+import '../services/session_service.dart';
 import '../theme/app_theme.dart';
+import 'party_bill_history_screen.dart';
 import 'party_form_screen.dart';
 
 class PartyListScreen extends StatefulWidget {
@@ -27,6 +29,14 @@ class _PartyListScreenState extends State<PartyListScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => PartyFormScreen(party: party),
+      ),
+    );
+  }
+
+  Future<void> _openHistory(Party party) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PartyBillHistoryScreen(party: party),
       ),
     );
   }
@@ -76,16 +86,18 @@ class _PartyListScreenState extends State<PartyListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canManage = SessionService.instance.canManageShop;
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Parties'),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        heroTag: 'fab_parties',
-        onPressed: () => _openForm(),
-        icon: const Icon(Icons.person_add_alt_1),
-        label: const Text('Add Party'),
-      ),
+      primary: false,
+      floatingActionButton: canManage
+          ? FloatingActionButton.extended(
+              heroTag: 'fab_parties',
+              onPressed: () => _openForm(),
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Add Party'),
+            )
+          : null,
       body: Column(
         children: [
           Padding(
@@ -141,7 +153,9 @@ class _PartyListScreenState extends State<PartyListScreen> {
                       padding: const EdgeInsets.all(24),
                       child: Text(
                         _query.isEmpty
-                            ? 'No parties yet.\nTap Add Party to create one.'
+                            ? canManage
+                                ? 'No parties yet.\nTap Add Party to create one.'
+                                : 'No parties yet.\nAsk the shop owner to add one.'
                             : 'No parties match your search.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyLarge,
@@ -183,27 +197,35 @@ class _PartyListScreenState extends State<PartyListScreen> {
                         ),
                         trailing: PopupMenuButton<String>(
                           onSelected: (value) {
-                            if (value == 'edit') {
+                            if (value == 'history') {
+                              _openHistory(party);
+                            } else if (value == 'edit') {
                               _openForm(party: party);
                             } else if (value == 'delete') {
                               _confirmDelete(party);
                             }
                           },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(
-                              value: 'edit',
-                              child: Text('Edit'),
+                          itemBuilder: (context) => [
+                            const PopupMenuItem(
+                              value: 'history',
+                              child: Text('Bill history'),
                             ),
-                            PopupMenuItem(
-                              value: 'delete',
-                              child: Text(
-                                'Delete',
-                                style: TextStyle(color: AppTheme.danger),
+                            if (canManage) ...const [
+                              PopupMenuItem(
+                                value: 'edit',
+                                child: Text('Edit'),
                               ),
-                            ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text(
+                                  'Delete',
+                                  style: TextStyle(color: AppTheme.danger),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
-                        onTap: () => _openForm(party: party),
+                        onTap: () => _openHistory(party),
                       ),
                     );
                   },

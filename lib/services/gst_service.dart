@@ -5,6 +5,8 @@ import '../utils/currency_utils.dart';
 /// Result of summing calculated bill lines.
 class GstBillCalculation {
   final List<BillItem> items;
+  final double totalGross;
+  final double totalDiscount;
   final double subtotal;
   final double totalCgst;
   final double totalSgst;
@@ -14,6 +16,8 @@ class GstBillCalculation {
 
   const GstBillCalculation({
     required this.items,
+    required this.totalGross,
+    required this.totalDiscount,
     required this.subtotal,
     required this.totalCgst,
     required this.totalSgst,
@@ -34,12 +38,25 @@ class GstService {
     return shopState.trim().toLowerCase() == partyState.trim().toLowerCase();
   }
 
-  /// taxableAmount = rate * quantity
-  static double taxableAmount(double rate, double quantity) {
+  /// grossAmount = rate × quantity
+  static double grossAmount(double rate, double quantity) {
     return roundMoney(rate * quantity);
   }
 
+  /// Returns an error message if discount is invalid, otherwise null.
+  static String? validateDiscount(double discount, double grossAmount) {
+    if (discount < 0) {
+      return 'Discount cannot be negative';
+    }
+    if (discount > grossAmount) {
+      return 'Discount cannot exceed item amount';
+    }
+    return null;
+  }
+
   /// Builds one line with CGST/SGST or IGST based on [isIntraState].
+  ///
+  /// GST is always calculated on (grossAmount − discount), never on gross alone.
   static BillItem calculateLineItem({
     required String productId,
     required String name,
@@ -48,8 +65,17 @@ class GstService {
     required double rate,
     required double gstPercent,
     required bool isIntraState,
+    double discount = 0,
   }) {
-    final taxable = taxableAmount(rate, quantity);
+    final gross = grossAmount(rate, quantity);
+    final disc = roundMoney(discount);
+
+    final validationError = validateDiscount(disc, gross);
+    if (validationError != null) {
+      throw ArgumentError(validationError);
+    }
+
+    final taxable = roundMoney(gross - disc);
 
     late final double cgst;
     late final double sgst;
@@ -76,6 +102,8 @@ class GstService {
       quantity: quantity,
       rate: roundMoney(rate),
       gstPercent: gstPercent,
+      grossAmount: gross,
+      discount: disc,
       taxableAmount: taxable,
       cgst: cgst,
       sgst: sgst,
@@ -90,6 +118,7 @@ class GstService {
     required double quantity,
     required bool isIntraState,
     double? rate,
+    double discount = 0,
   }) {
     return calculateLineItem(
       productId: product.productId,
@@ -99,6 +128,7 @@ class GstService {
       rate: rate ?? product.price,
       gstPercent: product.gstPercent,
       isIntraState: isIntraState,
+      discount: discount,
     );
   }
 
@@ -119,25 +149,32 @@ class GstService {
             rate: draft.rate,
             gstPercent: draft.gstPercent,
             isIntraState: intra,
+            discount: draft.discount,
           ),
         )
         .toList();
   }
 
-  /// subtotal, totalTax, grandTotal from calculated lines.
+  /// subtotal (= sum of taxable after discount), totalTax, grandTotal.
   static GstBillCalculation summarize(List<BillItem> items) {
+    var totalGross = 0.0;
+    var totalDiscount = 0.0;
     var subtotal = 0.0;
     var totalCgst = 0.0;
     var totalSgst = 0.0;
     var totalIgst = 0.0;
 
     for (final item in items) {
+      totalGross += item.grossAmount;
+      totalDiscount += item.discount;
       subtotal += item.taxableAmount;
       totalCgst += item.cgst;
       totalSgst += item.sgst;
       totalIgst += item.igst;
     }
 
+    totalGross = roundMoney(totalGross);
+    totalDiscount = roundMoney(totalDiscount);
     subtotal = roundMoney(subtotal);
     totalCgst = roundMoney(totalCgst);
     totalSgst = roundMoney(totalSgst);
@@ -147,6 +184,8 @@ class GstService {
 
     return GstBillCalculation(
       items: List.unmodifiable(items),
+      totalGross: totalGross,
+      totalDiscount: totalDiscount,
       subtotal: subtotal,
       totalCgst: totalCgst,
       totalSgst: totalSgst,
@@ -171,7 +210,7 @@ class GstService {
   }
 }
 
-/// Input line before GST is applied (product snapshot + qty/rate).
+/// Input line before GST is applied (product snapshot + qty/rate/discount).
 class BillItemDraft {
   final String productId;
   final String name;
@@ -179,6 +218,7 @@ class BillItemDraft {
   final double quantity;
   final double rate;
   final double gstPercent;
+  final double discount;
 
   const BillItemDraft({
     required this.productId,
@@ -187,12 +227,14 @@ class BillItemDraft {
     required this.quantity,
     required this.rate,
     required this.gstPercent,
+    this.discount = 0,
   });
 
   factory BillItemDraft.fromProduct(
     Product product, {
     required double quantity,
     double? rate,
+    double discount = 0,
   }) {
     return BillItemDraft(
       productId: product.productId,
@@ -201,6 +243,7 @@ class BillItemDraft {
       quantity: quantity,
       rate: rate ?? product.price,
       gstPercent: product.gstPercent,
+      discount: discount,
     );
   }
 }
