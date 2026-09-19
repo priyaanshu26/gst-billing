@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "220168322379",
+    "project_id": "gst-billing-a8c12",
+    "storage_bucket": "gst-billing-a8c12.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:220168322379:android:3d915fc4e9d2feda4cfcce",
+        "android_client_info": {
+          "package_name": "com.gstbilling.gst_billing"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAZ4A398xdnUV-D4iUYVAsAWWqFIPyx2RQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
