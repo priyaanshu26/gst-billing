@@ -5,7 +5,27 @@ import '../models/bill.dart';
 import '../models/bill_item.dart';
 import '../models/invoice_counter.dart';
 import '../models/party.dart';
+import '../utils/currency_utils.dart';
+import '../utils/date_utils.dart';
 import 'firebase_service.dart';
+
+class DashboardStats {
+  final double todaySales;
+  final double monthlySales;
+  final int todayBillCount;
+  final int monthlyBillCount;
+  final double totalTax;
+  final List<Bill> recentBills;
+
+  const DashboardStats({
+    required this.todaySales,
+    required this.monthlySales,
+    required this.todayBillCount,
+    required this.monthlyBillCount,
+    required this.totalTax,
+    required this.recentBills,
+  });
+}
 
 class BillService {
   CollectionReference<Map<String, dynamic>> get _bills {
@@ -30,6 +50,50 @@ class BillService {
     final doc = await _bills.doc(billId).get();
     if (!doc.exists || doc.data() == null) return null;
     return Bill.fromMap(doc.id, doc.data()!);
+  }
+
+  List<Bill> filterBills(List<Bill> bills, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return bills;
+    return bills.where((bill) {
+      return bill.invoiceNo.toLowerCase().contains(q) ||
+          bill.partyName.toLowerCase().contains(q) ||
+          bill.partyGSTIN.toLowerCase().contains(q);
+    }).toList();
+  }
+
+  DashboardStats buildDashboardStats(
+    List<Bill> bills, {
+    DateTime? now,
+    int recentLimit = 5,
+  }) {
+    final reference = now ?? DateTime.now();
+    var todaySales = 0.0;
+    var monthlySales = 0.0;
+    var todayCount = 0;
+    var monthlyCount = 0;
+    var totalTax = 0.0;
+
+    for (final bill in bills) {
+      totalTax += bill.totalTax;
+      if (AppDateUtils.isSameDay(bill.invoiceDate, reference)) {
+        todaySales += bill.grandTotal;
+        todayCount += 1;
+      }
+      if (AppDateUtils.isSameMonth(bill.invoiceDate, reference)) {
+        monthlySales += bill.grandTotal;
+        monthlyCount += 1;
+      }
+    }
+
+    return DashboardStats(
+      todaySales: CurrencyUtils.roundMoney(todaySales),
+      monthlySales: CurrencyUtils.roundMoney(monthlySales),
+      todayBillCount: todayCount,
+      monthlyBillCount: monthlyCount,
+      totalTax: CurrencyUtils.roundMoney(totalTax),
+      recentBills: bills.take(recentLimit).toList(),
+    );
   }
 
   /// Creates a read-only bill. Invoice number is assigned inside a transaction.
