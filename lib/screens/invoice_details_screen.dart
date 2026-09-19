@@ -37,7 +37,9 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    _future = _billService.getBill(widget.billId);
+    _future = _billService.getBill(widget.billId).then(
+          (live) => live ?? widget.bill,
+        );
   }
 
   Future<ShopConfig> _shopConfig() => _shopConfigService.getOrCreateDefault();
@@ -88,20 +90,6 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
         return Scaffold(
           appBar: AppBar(
             title: const Text('Invoice'),
-            actions: [
-              if (bill != null) ...[
-                IconButton(
-                  tooltip: 'Preview PDF',
-                  onPressed: _pdfBusy ? null : () => _preview(bill),
-                  icon: const Icon(Icons.picture_as_pdf_outlined),
-                ),
-                IconButton(
-                  tooltip: 'Share / Download PDF',
-                  onPressed: _pdfBusy ? null : () => _share(bill),
-                  icon: const Icon(Icons.share_outlined),
-                ),
-              ],
-            ],
           ),
           body: _buildBody(snapshot),
           bottomNavigationBar: bill == null

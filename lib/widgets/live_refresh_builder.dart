@@ -88,7 +88,7 @@ class _LiveRefreshBuilderState<T> extends State<LiveRefreshBuilder<T>> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            '$_errorTitle\n${_error ?? ''}'.trim(),
+            '${widget.errorTitle}\n${_error ?? ''}'.trim(),
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppTheme.danger),
           ),
