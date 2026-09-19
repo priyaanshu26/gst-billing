@@ -5,6 +5,7 @@ import '../services/product_service.dart';
 import '../services/session_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency_utils.dart';
+import '../widgets/live_refresh_builder.dart';
 import 'product_details_screen.dart';
 import 'product_form_screen.dart';
 
@@ -19,11 +20,16 @@ class _ProductListScreenState extends State<ProductListScreen> {
   final _productService = ProductService();
   final _searchController = TextEditingController();
   String _query = '';
+  int _reload = 0;
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _reloadList() {
+    if (mounted) setState(() => _reload++);
   }
 
   Future<void> _openForm({Product? product}) async {
@@ -32,14 +38,16 @@ class _ProductListScreenState extends State<ProductListScreen> {
         builder: (_) => ProductFormScreen(product: product),
       ),
     );
+    _reloadList();
   }
 
-  void _openDetails(Product product) {
-    Navigator.of(context).push(
+  Future<void> _openDetails(Product product) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ProductDetailsScreen(product: product),
       ),
     );
+    _reloadList();
   }
 
   Future<void> _assignBarcode(Product product) async {
@@ -141,29 +149,14 @@ class _ProductListScreenState extends State<ProductListScreen> {
             ),
           ),
           Expanded(
-            child: StreamBuilder<List<Product>>(
-              stream: _productService.watchProducts(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Could not load products.\n${snapshot.error}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppTheme.danger),
-                      ),
-                    ),
-                  );
-                }
-
+            child: LiveRefreshBuilder<List<Product>>(
+              key: ValueKey(_reload),
+              load: _productService.getProducts,
+              listen: _productService.watchProducts,
+              errorTitle: 'Could not load products.',
+              builder: (context, allProducts) {
                 final products = _productService.filterProducts(
-                  snapshot.data ?? const [],
+                  allProducts,
                   _query,
                 );
 

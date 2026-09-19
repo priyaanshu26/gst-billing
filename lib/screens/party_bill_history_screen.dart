@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import '../models/bill.dart';
 import '../models/party.dart';
 import '../services/bill_service.dart';
+import '../services/party_service.dart';
 import '../services/session_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency_utils.dart';
 import '../utils/date_utils.dart';
+import '../widgets/live_refresh_builder.dart';
 import 'invoice_details_screen.dart';
 import 'party_form_screen.dart';
 
@@ -21,8 +23,10 @@ class PartyBillHistoryScreen extends StatefulWidget {
 
 class _PartyBillHistoryScreenState extends State<PartyBillHistoryScreen> {
   final _billService = BillService();
+  final _partyService = PartyService();
 
   late Party _party;
+  int _reload = 0;
 
   @override
   void initState() {
@@ -34,14 +38,23 @@ class _PartyBillHistoryScreenState extends State<PartyBillHistoryScreen> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => PartyFormScreen(party: _party)),
     );
+    if (!mounted) return;
+    final fresh = await _partyService.getParty(_party.partyId);
+    if (fresh != null && mounted) {
+      setState(() {
+        _party = fresh;
+        _reload++;
+      });
+    }
   }
 
-  void _openBill(Bill bill) {
-    Navigator.of(context).push(
+  Future<void> _openBill(Bill bill) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => InvoiceDetailsScreen(billId: bill.billId, bill: bill),
       ),
     );
+    if (mounted) setState(() => _reload++);
   }
 
   @override
@@ -58,28 +71,12 @@ class _PartyBillHistoryScreenState extends State<PartyBillHistoryScreen> {
             ),
         ],
       ),
-      body: StreamBuilder<List<Bill>>(
-        stream: _billService.watchPartyBills(_party.partyId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Could not load bills for this party.\n${snapshot.error}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.danger),
-                ),
-              ),
-            );
-          }
-
-          final bills = snapshot.data ?? const <Bill>[];
+      body: LiveRefreshBuilder<List<Bill>>(
+        key: ValueKey('${_party.partyId}-$_reload'),
+        load: () => _billService.getPartyBills(_party.partyId),
+        listen: () => _billService.watchPartyBills(_party.partyId),
+        errorTitle: 'Could not load bills for this party.',
+        builder: (context, bills) {
           final totalBilled = bills.fold<double>(
             0,
             (sum, bill) => sum + bill.grandTotal,

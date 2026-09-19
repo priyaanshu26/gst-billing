@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/collections.dart';
 import '../models/party.dart';
 import 'firebase_service.dart';
+import 'live_firestore.dart';
 import 'session_service.dart';
 
 class PartyService {
@@ -20,14 +21,14 @@ class PartyService {
   }
 
   Future<List<Party>> getParties() async {
-    final snapshot = await _collection.orderBy('name').get();
+    final snapshot = await LiveFirestore.query(_collection.orderBy('name'));
     return snapshot.docs
         .map((doc) => Party.fromMap(doc.id, doc.data()))
         .toList();
   }
 
   Future<Party?> getParty(String partyId) async {
-    final doc = await _collection.doc(partyId).get();
+    final doc = await LiveFirestore.doc(_collection.doc(partyId));
     if (!doc.exists || doc.data() == null) return null;
     return Party.fromMap(doc.id, doc.data()!);
   }

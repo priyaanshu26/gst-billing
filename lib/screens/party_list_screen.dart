@@ -4,6 +4,7 @@ import '../models/party.dart';
 import '../services/party_service.dart';
 import '../services/session_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/live_refresh_builder.dart';
 import 'party_bill_history_screen.dart';
 import 'party_form_screen.dart';
 
@@ -18,11 +19,16 @@ class _PartyListScreenState extends State<PartyListScreen> {
   final _partyService = PartyService();
   final _searchController = TextEditingController();
   String _query = '';
+  int _reload = 0;
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _reloadList() {
+    if (mounted) setState(() => _reload++);
   }
 
   Future<void> _openForm({Party? party}) async {
@@ -31,6 +37,7 @@ class _PartyListScreenState extends State<PartyListScreen> {
         builder: (_) => PartyFormScreen(party: party),
       ),
     );
+    _reloadList();
   }
 
   Future<void> _openHistory(Party party) async {
@@ -39,6 +46,7 @@ class _PartyListScreenState extends State<PartyListScreen> {
         builder: (_) => PartyBillHistoryScreen(party: party),
       ),
     );
+    _reloadList();
   }
 
   Future<void> _confirmDelete(Party party) async {
@@ -121,31 +129,13 @@ class _PartyListScreenState extends State<PartyListScreen> {
             ),
           ),
           Expanded(
-            child: StreamBuilder<List<Party>>(
-              stream: _partyService.watchParties(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    !snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        'Could not load parties.\n${snapshot.error}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(color: AppTheme.danger),
-                      ),
-                    ),
-                  );
-                }
-
-                final parties = _partyService.filterParties(
-                  snapshot.data ?? const [],
-                  _query,
-                );
+            child: LiveRefreshBuilder<List<Party>>(
+              key: ValueKey(_reload),
+              load: _partyService.getParties,
+              listen: _partyService.watchParties,
+              errorTitle: 'Could not load parties.',
+              builder: (context, allParties) {
+                final parties = _partyService.filterParties(allParties, _query);
 
                 if (parties.isEmpty) {
                   return Center(

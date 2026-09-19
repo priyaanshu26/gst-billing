@@ -37,9 +37,7 @@ class _InvoiceDetailsScreenState extends State<InvoiceDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    _future = widget.bill != null
-        ? Future.value(widget.bill)
-        : _billService.getBill(widget.billId);
+    _future = _billService.getBill(widget.billId);
   }
 
   Future<ShopConfig> _shopConfig() => _shopConfigService.getOrCreateDefault();

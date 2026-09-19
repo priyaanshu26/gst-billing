@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/collections.dart';
 import '../models/shop_config.dart';
 import 'firebase_service.dart';
+import 'live_firestore.dart';
 import 'session_service.dart';
 
 class ShopConfigService {
@@ -13,7 +14,7 @@ class ShopConfigService {
   }
 
   Future<ShopConfig?> getShopConfig() async {
-    final snap = await _doc.get();
+    final snap = await LiveFirestore.doc(_doc);
     if (!snap.exists || snap.data() == null) return null;
     return ShopConfig.fromMap(snap.data()!);
   }

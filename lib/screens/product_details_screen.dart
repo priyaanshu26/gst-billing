@@ -20,12 +20,32 @@ class ProductDetailsScreen extends StatefulWidget {
 class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
   final _productService = ProductService();
   late Product _product;
+  bool _loading = true;
   bool _assigning = false;
+  String? _loadError;
 
   @override
   void initState() {
     super.initState();
     _product = widget.product;
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final fresh = await _productService.getProduct(widget.product.productId);
+      if (!mounted) return;
+      setState(() {
+        if (fresh != null) _product = fresh;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = error.toString();
+        _loading = false;
+      });
+    }
   }
 
   Future<void> _edit() async {
@@ -82,7 +102,20 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             ),
         ],
       ),
-      body: ListView(
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _loadError != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Could not load product.\n$_loadError',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.danger),
+                    ),
+                  ),
+                )
+              : ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(

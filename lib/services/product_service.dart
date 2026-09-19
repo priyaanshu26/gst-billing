@@ -4,6 +4,7 @@ import '../constants/collections.dart';
 import '../models/map_helpers.dart';
 import '../models/product.dart';
 import 'firebase_service.dart';
+import 'live_firestore.dart';
 import 'session_service.dart';
 
 class ProductService {
@@ -27,14 +28,14 @@ class ProductService {
   }
 
   Future<List<Product>> getProducts() async {
-    final snapshot = await _collection.orderBy('name').get();
+    final snapshot = await LiveFirestore.query(_collection.orderBy('name'));
     return snapshot.docs
         .map((doc) => Product.fromMap(doc.id, doc.data()))
         .toList();
   }
 
   Future<Product?> getProduct(String productId) async {
-    final doc = await _collection.doc(productId).get();
+    final doc = await LiveFirestore.doc(_collection.doc(productId));
     if (!doc.exists || doc.data() == null) return null;
     return Product.fromMap(doc.id, doc.data()!);
   }
@@ -44,8 +45,9 @@ class ProductService {
     final code = barcode.trim();
     if (code.isEmpty) return null;
 
-    final snapshot =
-        await _collection.where('barcode', isEqualTo: code).limit(1).get();
+    final snapshot = await LiveFirestore.query(
+      _collection.where('barcode', isEqualTo: code).limit(1),
+    );
     if (snapshot.docs.isEmpty) return null;
     final doc = snapshot.docs.first;
     return Product.fromMap(doc.id, doc.data());

@@ -5,41 +5,43 @@ import '../services/bill_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency_utils.dart';
 import '../utils/date_utils.dart';
+import '../widgets/live_refresh_builder.dart';
 import 'invoice_details_screen.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final billService = BillService();
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
 
+class _DashboardScreenState extends State<DashboardScreen> {
+  final _billService = BillService();
+  int _reload = 0;
+
+  Future<void> _openBill(Bill bill) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => InvoiceDetailsScreen(
+          billId: bill.billId,
+          bill: bill,
+        ),
+      ),
+    );
+    if (mounted) setState(() => _reload++);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       primary: false,
-      body: StreamBuilder<List<Bill>>(
-        stream: billService.watchBills(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'Could not load dashboard.\n${snapshot.error}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.danger),
-                ),
-              ),
-            );
-          }
-
-          final stats = billService.buildDashboardStats(
-            snapshot.data ?? const [],
-          );
+      body: LiveRefreshBuilder<List<Bill>>(
+        key: ValueKey(_reload),
+        load: _billService.getBills,
+        listen: _billService.watchBills,
+        errorTitle: 'Could not load dashboard.',
+        builder: (context, bills) {
+          final stats = _billService.buildDashboardStats(bills);
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -135,16 +137,7 @@ class DashboardScreen extends StatelessWidget {
                           CurrencyUtils.format(bill.grandTotal),
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => InvoiceDetailsScreen(
-                                billId: bill.billId,
-                                bill: bill,
-                              ),
-                            ),
-                          );
-                        },
+                        onTap: () => _openBill(bill),
                       ),
                     ),
                   ),

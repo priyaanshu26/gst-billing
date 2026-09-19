@@ -52,6 +52,12 @@ class _ShopSettingsScreenState extends State<ShopSettingsScreen> {
   }
 
   Future<void> _load() async {
+    if (!_loading) {
+      setState(() {
+        _loading = true;
+        _loadError = null;
+      });
+    }
     try {
       final config = await _shopConfigService.getOrCreateDefault();
       if (!mounted) return;

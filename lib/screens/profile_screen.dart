@@ -14,13 +14,52 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  final _authService = AuthService();
   bool _signingOut = false;
+  bool _loading = true;
+  AppUser? _user;
+  String? _loadError;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (mounted && !_loading) {
+      setState(() {
+        _loading = true;
+        _loadError = null;
+      });
+    }
+    try {
+      final current = SessionService.instance.currentUser;
+      AppUser? profile = current;
+      if (current != null) {
+        profile = await _authService.getUserProfile(current.uid) ?? current;
+        SessionService.instance.setUser(profile);
+      }
+      if (!mounted) return;
+      setState(() {
+        _user = profile;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loadError = error.toString();
+        _user = SessionService.instance.currentUser;
+        _loading = false;
+      });
+    }
+  }
 
   Future<void> _logout() async {
     if (_signingOut) return;
     setState(() => _signingOut = true);
     try {
-      await AuthService().signOut();
+      await _authService.signOut();
       if (!mounted) return;
       Navigator.of(context).popUntil((route) => route.isFirst);
     } catch (error) {
@@ -37,11 +76,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = SessionService.instance.currentUser;
+    final user = _user;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Profile')),
-      body: ListView(
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _loadError != null && user == null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Could not load profile.\n$_loadError',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(color: AppTheme.danger),
+                    ),
+                  ),
+                )
+              : ListView(
         padding: const EdgeInsets.all(16),
         children: [
           Card(
@@ -104,12 +156,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 trailing: const Icon(Icons.chevron_right),
                 onTap: _signingOut
                     ? null
-                    : () {
-                        Navigator.of(context).push(
+                    : () async {
+                        await Navigator.of(context).push(
                           MaterialPageRoute(
                             builder: (_) => const StaffListScreen(),
                           ),
                         );
+                        if (mounted) _load();
                       },
               ),
             ),

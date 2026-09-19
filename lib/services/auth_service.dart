@@ -7,6 +7,7 @@ import '../firebase_options.dart';
 import '../models/app_user.dart';
 import '../models/shop_config.dart';
 import 'firebase_service.dart';
+import 'live_firestore.dart';
 import 'session_service.dart';
 
 class AuthService {
@@ -31,7 +32,7 @@ class AuthService {
   }
 
   Future<AppUser?> getUserProfile(String uid) async {
-    final snap = await _users.doc(uid).get();
+    final snap = await LiveFirestore.doc(_users.doc(uid));
     if (!snap.exists || snap.data() == null) return null;
     return AppUser.fromMap(snap.id, snap.data()!);
   }
@@ -196,15 +197,29 @@ class AuthService {
   }
 
   Stream<List<AppUser>> watchShopUsers(String shopId) {
-    return _users.where('shopId', isEqualTo: shopId).snapshots().map(
-          (snap) => snap.docs
-              .map((doc) => AppUser.fromMap(doc.id, doc.data()))
-              .toList()
-            ..sort((a, b) {
-              if (a.isOwner != b.isOwner) return a.isOwner ? -1 : 1;
-              return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-            }),
-        );
+    return _users
+        .where('shopId', isEqualTo: shopId)
+        .snapshots()
+        .map((snap) => _mapShopUsers(snap.docs));
+  }
+
+  Future<List<AppUser>> getShopUsers(String shopId) async {
+    final snap = await LiveFirestore.query(
+      _users.where('shopId', isEqualTo: shopId),
+    );
+    return _mapShopUsers(snap.docs);
+  }
+
+  List<AppUser> _mapShopUsers(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    return docs
+        .map((doc) => AppUser.fromMap(doc.id, doc.data()))
+        .toList()
+      ..sort((a, b) {
+        if (a.isOwner != b.isOwner) return a.isOwner ? -1 : 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
   }
 
   Future<void> deleteStaff(String uid) async {

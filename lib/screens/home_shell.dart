@@ -21,8 +21,11 @@ class _HomeShellState extends State<HomeShell> {
   static const _invoiceTab = 2;
 
   int _navIndex = 0;
+  int _refreshToken = 0;
 
-  int get _pageIndex => _navIndex < _invoiceTab ? _navIndex : _navIndex - 1;
+  void _refreshCurrentPage() {
+    setState(() => _refreshToken++);
+  }
 
   String get _title {
     switch (_navIndex) {
@@ -45,18 +48,21 @@ class _HomeShellState extends State<HomeShell> {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const CreateInvoiceScreen()),
     );
+    if (mounted) _refreshCurrentPage();
   }
 
   Future<void> _openHistory() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const BillListScreen()),
     );
+    if (mounted) _refreshCurrentPage();
   }
 
   Future<void> _openProfile() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ProfileScreen()),
     );
+    if (mounted) _refreshCurrentPage();
   }
 
   void _onDestinationSelected(int index) {
@@ -64,7 +70,23 @@ class _HomeShellState extends State<HomeShell> {
       _openCreateInvoice();
       return;
     }
-    setState(() => _navIndex = index);
+    setState(() {
+      _navIndex = index;
+      _refreshToken++;
+    });
+  }
+
+  Widget _currentPage() {
+    switch (_navIndex) {
+      case 1:
+        return const PartyListScreen();
+      case 3:
+        return const ProductListScreen();
+      case 4:
+        return const ShopSettingsScreen(embedded: true);
+      default:
+        return const DashboardScreen();
+    }
   }
 
   @override
@@ -88,14 +110,9 @@ class _HomeShellState extends State<HomeShell> {
               ),
             ],
           ),
-          body: IndexedStack(
-            index: _pageIndex,
-            children: const [
-              DashboardScreen(),
-              PartyListScreen(),
-              ProductListScreen(),
-              ShopSettingsScreen(embedded: true),
-            ],
+          body: KeyedSubtree(
+            key: ValueKey('$_navIndex-$_refreshToken'),
+            child: _currentPage(),
           ),
           bottomNavigationBar: NavigationBar(
             selectedIndex: _navIndex,

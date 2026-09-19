@@ -4,6 +4,7 @@ import '../models/app_user.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/live_refresh_builder.dart';
 
 class StaffListScreen extends StatefulWidget {
   const StaffListScreen({super.key});
@@ -95,24 +96,11 @@ class _StaffListScreenState extends State<StaffListScreen> {
         icon: const Icon(Icons.person_add_alt_1),
         label: const Text('Add Staff'),
       ),
-      body: StreamBuilder<List<AppUser>>(
-        stream: _authService.watchShopUsers(shopId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting &&
-              !snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Could not load staff.\n${snapshot.error}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.danger),
-              ),
-            );
-          }
-
-          final users = snapshot.data ?? const [];
+      body: LiveRefreshBuilder<List<AppUser>>(
+        load: () => _authService.getShopUsers(shopId),
+        listen: () => _authService.watchShopUsers(shopId),
+        errorTitle: 'Could not load staff.',
+        builder: (context, users) {
           if (users.isEmpty) {
             return const Center(child: Text('No users found'));
           }

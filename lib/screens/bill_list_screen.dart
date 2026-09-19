@@ -8,6 +8,7 @@ import '../services/shop_config_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/currency_utils.dart';
 import '../utils/date_utils.dart';
+import '../widgets/live_refresh_builder.dart';
 import 'create_invoice_screen.dart';
 import 'invoice_details_screen.dart';
 
@@ -29,6 +30,7 @@ class _BillListScreenState extends State<BillListScreen> {
   bool _pdfBusy = false;
   bool _exportBusy = false;
   DateTimeRange? _dateRange;
+  int _reload = 0;
 
   @override
   void dispose() {
@@ -36,10 +38,15 @@ class _BillListScreenState extends State<BillListScreen> {
     super.dispose();
   }
 
+  void _reloadList() {
+    if (mounted) setState(() => _reload++);
+  }
+
   Future<void> _openCreate() async {
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const CreateInvoiceScreen()),
     );
+    _reloadList();
   }
 
   Future<void> _pickDateRange() async {
@@ -55,12 +62,13 @@ class _BillListScreenState extends State<BillListScreen> {
     setState(() => _dateRange = picked);
   }
 
-  void _openDetails(Bill bill) {
-    Navigator.of(context).push(
+  Future<void> _openDetails(Bill bill) async {
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => InvoiceDetailsScreen(billId: bill.billId, bill: bill),
       ),
     );
+    _reloadList();
   }
 
   Future<void> _viewPdf(Bill bill) async {
@@ -111,44 +119,31 @@ class _BillListScreenState extends State<BillListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Bill>>(
-      stream: _billService.watchBills(),
-      builder: (context, snapshot) {
-        final bills = _billService.filterBills(
-          snapshot.data ?? const [],
-          _query,
-          from: _dateRange?.start,
-          to: _dateRange?.end,
-        );
-        final canExport = !_exportBusy && bills.isNotEmpty;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Bill History'),
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab_bills',
+        onPressed: _openCreate,
+        icon: const Icon(Icons.receipt_long),
+        label: const Text('Create Invoice'),
+      ),
+      body: LiveRefreshBuilder<List<Bill>>(
+        key: ValueKey(_reload),
+        load: _billService.getBills,
+        listen: _billService.watchBills,
+        errorTitle: 'Could not load bills.',
+        builder: (context, allBills) {
+          final bills = _billService.filterBills(
+            allBills,
+            _query,
+            from: _dateRange?.start,
+            to: _dateRange?.end,
+          );
+          final canExport = !_exportBusy && bills.isNotEmpty;
 
-        return Scaffold(
-          appBar: AppBar(
-            title: const Text('Bill History'),
-            actions: [
-              IconButton(
-                tooltip: 'Export CSV',
-                onPressed: canExport ? () => _exportCsv(bills) : null,
-                icon: _exportBusy
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.file_download_outlined),
-              ),
-            ],
-          ),
-          floatingActionButton: FloatingActionButton.extended(
-            heroTag: 'fab_bills',
-            onPressed: _openCreate,
-            icon: const Icon(Icons.receipt_long),
-            label: const Text('Create Invoice'),
-          ),
-          body: Column(
+          return Column(
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -197,39 +192,29 @@ class _BillListScreenState extends State<BillListScreen> {
                         icon: const Icon(Icons.filter_alt_off_outlined),
                       ),
                     ],
+                    IconButton(
+                      tooltip: 'Export CSV',
+                      onPressed: canExport ? () => _exportCsv(bills) : null,
+                      icon: _exportBusy
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.file_download_outlined),
+                    ),
                   ],
                 ),
               ),
-              Expanded(child: _buildBillList(snapshot, bills)),
+              Expanded(child: _buildBillList(bills)),
             ],
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildBillList(
-    AsyncSnapshot<List<Bill>> snapshot,
-    List<Bill> bills,
-  ) {
-    if (snapshot.connectionState == ConnectionState.waiting &&
-        !snapshot.hasData) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (snapshot.hasError) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(
-            'Could not load bills.\n${snapshot.error}',
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppTheme.danger),
-          ),
-        ),
-      );
-    }
-
+  Widget _buildBillList(List<Bill> bills) {
     if (bills.isEmpty) {
       return Center(
         child: Padding(

@@ -8,6 +8,7 @@ import '../models/party.dart';
 import '../utils/currency_utils.dart';
 import '../utils/date_utils.dart';
 import 'firebase_service.dart';
+import 'live_firestore.dart';
 import 'session_service.dart';
 
 class DashboardStats {
@@ -47,43 +48,49 @@ class BillService {
   /// Newest first. Sorted in memory so History does not depend on a Firestore
   /// composite/single-field index, and one malformed bill cannot blank the page.
   Stream<List<Bill>> watchBills() {
-    return _bills.snapshots().map((snapshot) {
-      final bills = <Bill>[];
-      for (final doc in snapshot.docs) {
-        try {
-          bills.add(Bill.fromMap(doc.id, doc.data()));
-        } catch (_) {
-          // Skip unreadable documents so the rest of history still loads.
-        }
-      }
-      bills.sort((a, b) => b.invoiceDate.compareTo(a.invoiceDate));
-      return bills;
-    });
+    return _bills.snapshots().map((snapshot) => _parseBills(snapshot.docs));
+  }
+
+  Future<List<Bill>> getBills() async {
+    final snapshot = await LiveFirestore.query(_bills);
+    return _parseBills(snapshot.docs);
   }
 
   /// Bills for one party, newest first. Sorted in memory so Firestore does not
   /// need a composite index on (partyId, invoiceDate).
   Stream<List<Bill>> watchPartyBills(String partyId) {
-    return _bills.where('partyId', isEqualTo: partyId).snapshots().map(
-      (snapshot) {
-        final bills = <Bill>[];
-        for (final doc in snapshot.docs) {
-          try {
-            bills.add(Bill.fromMap(doc.id, doc.data()));
-          } catch (_) {
-            // Skip unreadable documents so party history still loads.
-          }
-        }
-        bills.sort((a, b) => b.invoiceDate.compareTo(a.invoiceDate));
-        return bills;
-      },
+    return _bills
+        .where('partyId', isEqualTo: partyId)
+        .snapshots()
+        .map((snapshot) => _parseBills(snapshot.docs));
+  }
+
+  Future<List<Bill>> getPartyBills(String partyId) async {
+    final snapshot = await LiveFirestore.query(
+      _bills.where('partyId', isEqualTo: partyId),
     );
+    return _parseBills(snapshot.docs);
   }
 
   Future<Bill?> getBill(String billId) async {
-    final doc = await _bills.doc(billId).get();
+    final doc = await LiveFirestore.doc(_bills.doc(billId));
     if (!doc.exists || doc.data() == null) return null;
     return Bill.fromMap(doc.id, doc.data()!);
+  }
+
+  List<Bill> _parseBills(
+    Iterable<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    final bills = <Bill>[];
+    for (final doc in docs) {
+      try {
+        bills.add(Bill.fromMap(doc.id, doc.data()));
+      } catch (_) {
+        // Skip unreadable documents so the rest of history still loads.
+      }
+    }
+    bills.sort((a, b) => b.invoiceDate.compareTo(a.invoiceDate));
+    return bills;
   }
 
   /// Text search on invoice no / party / GSTIN, plus an inclusive date range.

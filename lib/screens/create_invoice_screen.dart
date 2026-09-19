@@ -51,6 +51,7 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   final List<_CartLine> _cart = [];
   bool _loadingConfig = true;
   bool _saving = false;
+  bool _catalogBusy = false;
   String? _configError;
 
   String _paymentStatus = PaymentStatus.unpaid;
@@ -131,8 +132,23 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   }
 
   Future<void> _pickParty() async {
-    final parties = await _partyService.getParties();
+    setState(() => _catalogBusy = true);
+    List<Party> parties;
+    try {
+      parties = await _partyService.getParties();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _catalogBusy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load parties: $error'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+      return;
+    }
     if (!mounted) return;
+    setState(() => _catalogBusy = false);
 
     if (parties.isEmpty) {
       final message = SessionService.instance.canManageShop
@@ -169,8 +185,23 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
   }
 
   Future<void> _addProduct() async {
-    final products = await _productService.getProducts();
+    setState(() => _catalogBusy = true);
+    List<Product> products;
+    try {
+      products = await _productService.getProducts();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _catalogBusy = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not load products: $error'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+      return;
+    }
     if (!mounted) return;
+    setState(() => _catalogBusy = false);
 
     if (products.isEmpty) {
       final message = SessionService.instance.canManageShop
@@ -406,7 +437,9 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
 
     final canManageShop = SessionService.instance.canManageShop;
 
-    return Scaffold(
+    return Stack(
+      children: [
+        Scaffold(
       appBar: AppBar(title: const Text('Create Invoice')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
@@ -657,6 +690,12 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
           ),
         ),
       ),
+        ),
+        if (_catalogBusy)
+          const ModalBarrier(dismissible: false, color: Color(0x33000000)),
+        if (_catalogBusy)
+          const Center(child: CircularProgressIndicator()),
+      ],
     );
   }
 }
