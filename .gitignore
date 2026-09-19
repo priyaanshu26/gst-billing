@@ -33,6 +33,10 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Seed script deps
+/tool/node_modules/
+/tool/package-lock.json
+
 # Symbolication related
 app.*.symbols
 
@@ -43,3 +47,4 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+tool

@@ -170,49 +170,11 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
     });
   }
 
-  Future<double?> _askQuantity(Product product, {double initial = 1}) async {
-    final controller = TextEditingController(
-      text: initial == initial.roundToDouble()
-          ? initial.toStringAsFixed(0)
-          : initial.toStringAsFixed(2),
-    );
-
-    final result = await showDialog<double>(
+  Future<double?> _askQuantity(Product product, {double initial = 1}) {
+    return showDialog<double>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(product.name),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-            ],
-            decoration: const InputDecoration(
-              labelText: 'Quantity',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                final value = double.tryParse(controller.text.trim());
-                if (value == null || value <= 0) return;
-                Navigator.pop(context, value);
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
+      builder: (context) => _QuantityDialog(product: product, initial: initial),
     );
-
-    controller.dispose();
-    return result;
   }
 
   Future<void> _editQuantity(_CartLine line) async {
@@ -458,6 +420,66 @@ class _CreateInvoiceScreenState extends State<CreateInvoiceScreen> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _QuantityDialog extends StatefulWidget {
+  const _QuantityDialog({required this.product, required this.initial});
+
+  final Product product;
+  final double initial;
+
+  @override
+  State<_QuantityDialog> createState() => _QuantityDialogState();
+}
+
+class _QuantityDialogState extends State<_QuantityDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial == widget.initial.roundToDouble()
+        ? widget.initial.toStringAsFixed(0)
+        : widget.initial.toStringAsFixed(2),
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final value = double.tryParse(_controller.text.trim());
+    if (value == null || value <= 0) return;
+    Navigator.pop(context, value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.product.name),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _submit(),
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+        ],
+        decoration: const InputDecoration(
+          labelText: 'Quantity',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: const Text('Add'),
+        ),
+      ],
     );
   }
 }

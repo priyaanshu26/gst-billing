@@ -69,6 +69,7 @@ class _BillListScreenState extends State<BillListScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Bill History')),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab_bills',
         onPressed: _openCreate,
         icon: const Icon(Icons.receipt_long),
         label: const Text('Create Invoice'),

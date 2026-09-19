@@ -81,6 +81,7 @@ class _PartyListScreenState extends State<PartyListScreen> {
         title: const Text('Parties'),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab_parties',
         onPressed: () => _openForm(),
         icon: const Icon(Icons.person_add_alt_1),
         label: const Text('Add Party'),

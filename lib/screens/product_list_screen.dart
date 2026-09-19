@@ -82,6 +82,7 @@ class _ProductListScreenState extends State<ProductListScreen> {
         title: const Text('Products'),
       ),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'fab_products',
         onPressed: () => _openForm(),
         icon: const Icon(Icons.add_box_outlined),
         label: const Text('Add Product'),
